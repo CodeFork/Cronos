@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard1.0</TargetFramework>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <TargetFrameworks>netstandard1.0;net45</TargetFrameworks>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Version>0.1.0</Version>
     <DocumentationFile>bin\Debug\netstandard1.0\.xml</DocumentationFile>
    
     <PackageId>Cronos</PackageId>
@@ -14,10 +14,15 @@
     <ProjectUrl>https://github.com/HangfireIO/Cronos</ProjectUrl>
     <PackageLicenseUrl>https://raw.github.com/HangfireIO/Cronos/master/LICENSE</PackageLicenseUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <Copyright>Copyright © 2016-2017 Andrey Dorokhov.</Copyright>
+    <PackageReleaseNotes>https://github.com/HangfireIO/Cronos/releases</PackageReleaseNotes>
+    <Copyright>Copyright © 2016-2017 Sergey Odinokov.</Copyright>
     <PackageTags>Cronos Cron Scheduler Recurring Jobs Tasks</PackageTags>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='netstandard1.0'">
+    <PackageReference Include="System.Globalization" Version="4.0.11" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <Optimize>False</Optimize>

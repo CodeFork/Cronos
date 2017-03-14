@@ -1,59 +1,80 @@
 #addin nuget:?package=Cake.VersionReader
 #tool "nuget:?package=xunit.runner.console"
 
+var version = "0.2.0";
+var configuration = "Release";
+
 Task("Restore-NuGet-Packages")
     .Does(()=> 
 {
-    StartProcess(".nuget/NuGet.exe", new ProcessSettings 
-    { 
-        Arguments = "restore Cronos.sln"
-    });
+    DotNetCoreRestore();
+});
+
+Task("Clean")
+    .Does(()=> 
+{
+    CleanDirectory("./build");
+    StartProcess("dotnet", "clean -c:" + configuration);
 });
 
 Task("Build")
+    .IsDependentOn("Clean")
     .IsDependentOn("Restore-NuGet-Packages")
     .Does(()=> 
 {
-    MSBuild("Cronos.sln", new MSBuildSettings 
+    DotNetCoreBuild("src/Cronos/Cronos.csproj",  new DotNetCoreBuildSettings
     {
-        ToolVersion = MSBuildToolVersion.VS2017,
-        Configuration = "Release"
-    }
-    .WithProperty("TargetFramework", "net452"));
+        Configuration = configuration,
+        ArgumentCustomization = args => args.Append("/p:Version=" + version)
+    });
 });
 
 Task("Test")
     .IsDependentOn("Build")
     .Does(() =>
 {
-    var testAssemblies = GetFiles("./tests/**/bin/Release/**/*.Tests.dll");
-    XUnit2(testAssemblies);
+    DotNetCoreTest("./tests/Cronos.Tests/Cronos.Tests.csproj", new DotNetCoreTestSettings
+    {
+        Configuration = "Release",
+        ArgumentCustomization = args => args.Append("/p:BuildProjectReferences=false")
+    });
 });
 
-Task("Pack")
+Task("AppVeyor")
     .IsDependentOn("Test")
     .Does(()=> 
 {
-    var version = GetVersionNumber("src/Cronos/bin/Release/netstandard1.0/Cronos.dll");
-    
-    var appveyorRepoTag = EnvironmentVariable("APPVEYOR_REPO_TAG");
-    var appveyorBuildNumber = EnvironmentVariable("APPVEYOR_BUILD_NUMBER");
-
-    if (appveyorRepoTag != "True" && appveyorBuildNumber != null) 
+    if (AppVeyor.Environment.Repository.Tag.IsTag) 
     {
-        version += "-build-" + appveyorBuildNumber;
+        var tagName = AppVeyor.Environment.Repository.Tag.Name;
+        if(tagName.StartsWith("v"))
+        {
+            version = tagName.Substring(1);
+        }
+    }
+    else
+    {
+        version += "-build-0" + AppVeyor.Environment.Build.Number;
     }
 
-    var appveyorRepoTagName = EnvironmentVariable("APPVEYOR_REPO_TAG_NAME");
-    if(appveyorRepoTagName != null && appveyorRepoTagName.StartsWith("v"+version+"-"))
-    {
-        version = appveyorRepoTagName.Substring(1);
-    }
+    AppVeyor.UpdateBuildVersion(version);
+});
+
+Task("Local")
+    .Does(()=> 
+{
+    RunTarget("Test");
+});
+
+Task("Pack")
+    .Does(()=> 
+{
+    var target = AppVeyor.IsRunningOnAppVeyor ? "AppVeyor" : "Local";
+    RunTarget(target);
 
     CreateDirectory("build");
     
-    CopyFiles(GetFiles("./src/Cronos/bin/**/*.nupkg"), "build");
-    Zip("./src/Cronos/bin/Release/netstandard1.0", "build/Cronos-" + version +".zip");
+    Zip("./src/Cronos/bin/" + configuration, "build/Cronos-" + version +".zip");
 });
-
+    
 RunTarget("Pack");

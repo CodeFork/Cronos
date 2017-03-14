@@ -5,12 +5,12 @@ namespace Cronos
     [Flags]
     internal enum CronExpressionFlag
     {
-        None = 0x0,
-        SecondStar = 0x1,
-        MinuteStar = 0x2,
-        HourStar = 0x4,
-        DayOfMonthQuestion = 0x8,
-        DayOfMonthLast = 0x10,
-        DayOfWeekLast = 0x20
+        None = 0b0,
+        DayOfMonthQuestion = 0b1,
+        DayOfMonthLast = 0b10,
+        DayOfWeekLast = 0b100,
+        Interval = 0b1000,
+        NearestWeekday = 0b10000,
+        NthDayOfWeek = 0b100000
     }
 }

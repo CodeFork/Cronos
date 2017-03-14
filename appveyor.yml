@@ -7,10 +7,18 @@
 #   - Section names should be unique on each level.
 os: Visual Studio 2017 RC
 
-version: 0.1.0-build-0{build}
-
 cache:
   - packages
+
+  # branches to build
+branches:
+  # whitelist
+  only:
+    - master
+    - dev
+
+pull_requests:
+  do_not_increment_build_number: true
   
 #---------------------------------#
 #       build configuration       #
