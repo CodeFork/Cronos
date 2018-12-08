@@ -1,6 +1,30 @@
-﻿using System;
+﻿// The MIT License(MIT)
+// 
+// Copyright (c) 2017 Sergey Odinokov
+// 
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Cronos.Tests
@@ -8,7 +32,7 @@ namespace Cronos.Tests
     public class CronExpressionFacts
     {
         private static readonly bool IsUnix =
-#if NETCOREAPP1_0
+#if NETCOREAPP1_1
             !System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
 #else
             Environment.OSVersion.Platform == PlatformID.MacOSX || Environment.OSVersion.Platform == PlatformID.Unix;
@@ -82,9 +106,11 @@ namespace Cronos.Tests
         [InlineData("*#1  * * * * *", CronFormat.IncludeSeconds, "Seconds")]
         [InlineData("0#2  * * * * *", CronFormat.IncludeSeconds, "Seconds")]
         [InlineData("L    * * * * *", CronFormat.IncludeSeconds, "Seconds")]
+        [InlineData("l    * * * * *", CronFormat.IncludeSeconds, "Seconds")]
         [InlineData("W    * * * * *", CronFormat.IncludeSeconds, "Seconds")]
+        [InlineData("w    * * * * *", CronFormat.IncludeSeconds, "Seconds")]
         [InlineData("LW   * * * * *", CronFormat.IncludeSeconds, "Seconds")]
-        [InlineData("?    * * * * *", CronFormat.IncludeSeconds, "Seconds")]
+        [InlineData("lw   * * * * *", CronFormat.IncludeSeconds, "Seconds")]
 
         // 2147483648 = Int32.MaxValue + 1
 
@@ -108,9 +134,10 @@ namespace Cronos.Tests
         [InlineData("*#1   * * * *", CronFormat.Standard, "Minutes")]
         [InlineData("5#3   * * * *", CronFormat.Standard, "Minutes")]
         [InlineData("L     * * * *", CronFormat.Standard, "Minutes")]
+        [InlineData("l     * * * *", CronFormat.Standard, "Minutes")]
         [InlineData("W     * * * *", CronFormat.Standard, "Minutes")]
-        [InlineData("LW    * * * *", CronFormat.Standard, "Minutes")]
-        [InlineData("?     * * * *", CronFormat.Standard, "Minutes")]
+        [InlineData("w     * * * *", CronFormat.Standard, "Minutes")]
+        [InlineData("lw    * * * *", CronFormat.Standard, "Minutes")]
 
         [InlineData("* 60    * * * *", CronFormat.IncludeSeconds, "Minutes")]
         [InlineData("* -1    * * * *", CronFormat.IncludeSeconds, "Minutes")]
@@ -129,9 +156,11 @@ namespace Cronos.Tests
         [InlineData("* *#1   * * * *", CronFormat.IncludeSeconds, "Minutes")]
         [InlineData("* 5#3   * * * *", CronFormat.IncludeSeconds, "Minutes")]
         [InlineData("* L     * * * *", CronFormat.IncludeSeconds, "Minutes")]
+        [InlineData("* l     * * * *", CronFormat.IncludeSeconds, "Minutes")]
         [InlineData("* W     * * * *", CronFormat.IncludeSeconds, "Minutes")]
+        [InlineData("* w     * * * *", CronFormat.IncludeSeconds, "Minutes")]
         [InlineData("* LW    * * * *", CronFormat.IncludeSeconds, "Minutes")]
-        [InlineData("* ?     * * * *", CronFormat.IncludeSeconds, "Minutes")]
+        [InlineData("* lw    * * * *", CronFormat.IncludeSeconds, "Minutes")]
 
         // Hour field is invalid.
         [InlineData("* 25   * * *", CronFormat.Standard, "Hours")]
@@ -150,9 +179,11 @@ namespace Cronos.Tests
         [InlineData("* *#2  * * *", CronFormat.Standard, "Hours")]
         [InlineData("* 10#1 * * *", CronFormat.Standard, "Hours")]
         [InlineData("* L    * * *", CronFormat.Standard, "Hours")]
+        [InlineData("* l    * * *", CronFormat.Standard, "Hours")]
         [InlineData("* W    * * *", CronFormat.Standard, "Hours")]
+        [InlineData("* w    * * *", CronFormat.Standard, "Hours")]
         [InlineData("* LW   * * *", CronFormat.Standard, "Hours")]
-        [InlineData("* ?    * * *", CronFormat.Standard, "Hours")]
+        [InlineData("* lw   * * *", CronFormat.Standard, "Hours")]
 
         [InlineData("* * 25   * * *", CronFormat.IncludeSeconds, "Hours")]
         [InlineData("* * -1   * * *", CronFormat.IncludeSeconds, "Hours")]
@@ -170,9 +201,11 @@ namespace Cronos.Tests
         [InlineData("* * *#2  * * *", CronFormat.IncludeSeconds, "Hours")]
         [InlineData("* * 10#1 * * *", CronFormat.IncludeSeconds, "Hours")]
         [InlineData("* * L    * * *", CronFormat.IncludeSeconds, "Hours")]
+        [InlineData("* * l    * * *", CronFormat.IncludeSeconds, "Hours")]
         [InlineData("* * W    * * *", CronFormat.IncludeSeconds, "Hours")]
+        [InlineData("* * w    * * *", CronFormat.IncludeSeconds, "Hours")]
         [InlineData("* * LW   * * *", CronFormat.IncludeSeconds, "Hours")]
-        [InlineData("* * ?    * * *", CronFormat.IncludeSeconds, "Hours")]
+        [InlineData("* * lw   * * *", CronFormat.IncludeSeconds, "Hours")]
 
         // Day of month field is invalid.
         [InlineData("* * 32     *  *", CronFormat.Standard, "Days of month")]
@@ -191,17 +224,24 @@ namespace Cronos.Tests
         [InlineData("* * 1m     *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * T      *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * MON    *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * mon    *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * #      *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * *#3    *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * 4#1    *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * W      *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * w      *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * 1-2W   *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * 1-2w   *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * 1,2W   *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * 1,2w   *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * 1/2W   *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * 1/2w   *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * 1-2/2W *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * 1-2/2w *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * 1LW    *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * 1lw    *  *", CronFormat.Standard, "Days of month")]
         [InlineData("* * L-31   *  *", CronFormat.Standard, "Days of month")]
-        [InlineData("* * ?/2    *  *", CronFormat.Standard, "Days of month")]
+        [InlineData("* * l-31   *  *", CronFormat.Standard, "Days of month")]
 
         [InlineData("* * * 32     *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 10-32  *  *", CronFormat.IncludeSeconds, "Days of month")]
@@ -219,17 +259,24 @@ namespace Cronos.Tests
         [InlineData("* * * 1m     *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * T      *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * MON    *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * mon    *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * #      *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * *#3    *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 4#1    *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * W      *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * w      *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 1-2W   *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * 1-2w   *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 1,2W   *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * 1,2w   *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 1/2W   *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * 1/2w   *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 1-2/2W *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * 1-2/2w *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * 1LW    *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * 1lw    *  *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * L-31   *  *", CronFormat.IncludeSeconds, "Days of month")]
-        [InlineData("* * * ?/2    *  *", CronFormat.IncludeSeconds, "Days of month")]
+        [InlineData("* * * l-31   *  *", CronFormat.IncludeSeconds, "Days of month")]
 
         // Month field is invalid.
         [InlineData("* * * 13   *", CronFormat.Standard, "Months")]
@@ -250,9 +297,11 @@ namespace Cronos.Tests
         [InlineData("* * * */2# *", CronFormat.Standard, "Months")]
         [InlineData("* * * 2#2  *", CronFormat.Standard, "Months")]
         [InlineData("* * * L    *", CronFormat.Standard, "Months")]
+        [InlineData("* * * l    *", CronFormat.Standard, "Months")]
         [InlineData("* * * W    *", CronFormat.Standard, "Months")]
+        [InlineData("* * * w    *", CronFormat.Standard, "Months")]
         [InlineData("* * * LW   *", CronFormat.Standard, "Months")]
-        [InlineData("* * * ?    *", CronFormat.Standard, "Months")]
+        [InlineData("* * * lw   *", CronFormat.Standard, "Months")]
 
         [InlineData("* * * * 13   *", CronFormat.IncludeSeconds, "Months")]
         [InlineData("* * * * -1   *", CronFormat.IncludeSeconds, "Months")]
@@ -272,9 +321,11 @@ namespace Cronos.Tests
         [InlineData("* * * * */2# *", CronFormat.IncludeSeconds, "Months")]
         [InlineData("* * * * 2#2  *", CronFormat.IncludeSeconds, "Months")]
         [InlineData("* * * * L    *", CronFormat.IncludeSeconds, "Months")]
+        [InlineData("* * * * l    *", CronFormat.IncludeSeconds, "Months")]
         [InlineData("* * * * W    *", CronFormat.IncludeSeconds, "Months")]
+        [InlineData("* * * * w    *", CronFormat.IncludeSeconds, "Months")]
         [InlineData("* * * * LW   *", CronFormat.IncludeSeconds, "Months")]
-        [InlineData("* * * * ?    *", CronFormat.IncludeSeconds, "Months")]
+        [InlineData("* * * * lw   *", CronFormat.IncludeSeconds, "Months")]
 
         // Day of week field is invalid.
         [InlineData("* * * * 8      ", CronFormat.Standard, "Days of week")]
@@ -292,14 +343,20 @@ namespace Cronos.Tests
         [InlineData("* * * * 0#     ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * 5#6    ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * SUN#6  ", CronFormat.Standard, "Days of week")]
+        [InlineData("* * * * sun#6  ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * SUN#050", CronFormat.Standard, "Days of week")]
+        [InlineData("* * * * sun#050", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * 0#0    ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * SUT    ", CronFormat.Standard, "Days of week")]
+        [InlineData("* * * * sut    ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * SU0    ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * SUNDAY ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * L      ", CronFormat.Standard, "Days of week")]
+        [InlineData("* * * * l      ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * W      ", CronFormat.Standard, "Days of week")]
+        [InlineData("* * * * w      ", CronFormat.Standard, "Days of week")]
         [InlineData("* * * * LW     ", CronFormat.Standard, "Days of week")]
+        [InlineData("* * * * lw     ", CronFormat.Standard, "Days of week")]
 
         [InlineData("* * * * * 8      ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * -1     ", CronFormat.IncludeSeconds, "Days of week")]
@@ -316,37 +373,32 @@ namespace Cronos.Tests
         [InlineData("* * * * * 0#     ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * 5#6    ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * SUN#6  ", CronFormat.IncludeSeconds, "Days of week")]
+        [InlineData("* * * * * sun#6  ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * SUN#050", CronFormat.IncludeSeconds, "Days of week")]
+        [InlineData("* * * * * sun#050", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * 0#0    ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * SUT    ", CronFormat.IncludeSeconds, "Days of week")]
+        [InlineData("* * * * * sut    ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * SU0    ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * SUNDAY ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * L      ", CronFormat.IncludeSeconds, "Days of week")]
+        [InlineData("* * * * * l      ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * W      ", CronFormat.IncludeSeconds, "Days of week")]
+        [InlineData("* * * * * w      ", CronFormat.IncludeSeconds, "Days of week")]
         [InlineData("* * * * * LW     ", CronFormat.IncludeSeconds, "Days of week")]
-
-        // '?' can be specfied only for day of month or day of week.
-        [InlineData("? * * * *", CronFormat.Standard, "Minutes")]
-        [InlineData("* ? * * *", CronFormat.Standard, "Hours")]
-        [InlineData("* * * ? *", CronFormat.Standard, "Months")]
-        [InlineData("* * ? * ?", CronFormat.Standard, "Days of week")]
-
-        [InlineData("? * * * * *", CronFormat.IncludeSeconds, "Seconds")]
-        [InlineData("* ? * * * *", CronFormat.IncludeSeconds, "Minutes")]
-        [InlineData("* * ? * * *", CronFormat.IncludeSeconds, "Hours")]
-        [InlineData("* * * * ? *", CronFormat.IncludeSeconds, "Months")]
-        [InlineData("* * * ? * ?", CronFormat.IncludeSeconds, "Days of week")]
+        [InlineData("* * * * * lw     ", CronFormat.IncludeSeconds, "Days of week")]
 
         // Fields count is invalid.
         [InlineData("* * *        ", CronFormat.Standard, "Months")]
         [InlineData("* * * * * * *", CronFormat.Standard, "")]
 
-        [InlineData("* * * *", CronFormat.IncludeSeconds, "Months")]
+        [InlineData("* * * *", CronFormat.IncludeSeconds, "Days of month")]
         [InlineData("* * * * * * *", CronFormat.IncludeSeconds, "")]
 
         // Macro is invalid.
         [InlineData("@", CronFormat.Standard, "")]
 
+        // ReSharper disable StringLiteralTypo
         [InlineData("@invalid        ", CronFormat.Standard, "")]
         [InlineData("          @yearl", CronFormat.Standard, "")]
         [InlineData("@yearl          ", CronFormat.Standard, "")]
@@ -393,6 +445,10 @@ namespace Cronos.Tests
         [InlineData("@hour           ", CronFormat.IncludeSeconds, "")]
         [InlineData("@midn           ", CronFormat.IncludeSeconds, "")]
         [InlineData("@week           ", CronFormat.IncludeSeconds, "")]
+        
+        [InlineData("60 * * * *", CronFormat.Standard, "between 0 and 59")]
+        [InlineData("*/60 * * * *", CronFormat.Standard, "between 1 and 59")]
+        // ReSharper restore StringLiteralTypo
         public void Parse_ThrowsCronFormatException_WhenCronExpressionIsInvalid(string cronExpression, CronFormat format, string invalidField)
         {
             var exception = Assert.Throws<CronFormatException>(() => CronExpression.Parse(cronExpression, format));
@@ -402,25 +458,41 @@ namespace Cronos.Tests
 
         [Theory]
         [InlineData("  @yearly      ", CronFormat.Standard)]
+        [InlineData("  @YEARLY      ", CronFormat.Standard)]
         [InlineData("  @annually    ", CronFormat.Standard)]
+        [InlineData("  @ANNUALLY    ", CronFormat.Standard)]
         [InlineData("  @monthly     ", CronFormat.Standard)]
+        [InlineData("  @MONTHLY     ", CronFormat.Standard)]
         [InlineData("  @weekly      ", CronFormat.Standard)]
+        [InlineData("  @WEEKLY      ", CronFormat.Standard)]
         [InlineData("  @daily       ", CronFormat.Standard)]
+        [InlineData("  @DAILY       ", CronFormat.Standard)]
         [InlineData("  @midnight    ", CronFormat.Standard)]
+        [InlineData("  @MIDNIGHT    ", CronFormat.Standard)]
         [InlineData("  @every_minute", CronFormat.Standard)]
+        [InlineData("  @EVERY_MINUTE", CronFormat.Standard)]
         [InlineData("  @every_second", CronFormat.Standard)]
+        [InlineData("  @EVERY_SECOND", CronFormat.Standard)]
 
         [InlineData("  @yearly      ", CronFormat.IncludeSeconds)]
+        [InlineData("  @YEARLY      ", CronFormat.IncludeSeconds)]
         [InlineData("  @annually    ", CronFormat.IncludeSeconds)]
+        [InlineData("  @ANNUALLY    ", CronFormat.IncludeSeconds)]
         [InlineData("  @monthly     ", CronFormat.IncludeSeconds)]
+        [InlineData("  @MONTHLY     ", CronFormat.IncludeSeconds)]
         [InlineData("  @weekly      ", CronFormat.IncludeSeconds)]
+        [InlineData("  @WEEKLY      ", CronFormat.IncludeSeconds)]
         [InlineData("  @daily       ", CronFormat.IncludeSeconds)]
+        [InlineData("  @DAILY       ", CronFormat.IncludeSeconds)]
         [InlineData("  @midnight    ", CronFormat.IncludeSeconds)]
+        [InlineData("  @MIDNIGHT    ", CronFormat.IncludeSeconds)]
         [InlineData("  @every_minute", CronFormat.IncludeSeconds)]
+        [InlineData("  @EVERY_MINUTE", CronFormat.IncludeSeconds)]
         [InlineData("  @every_second", CronFormat.IncludeSeconds)]
+        [InlineData("  @EVERY_SECOND", CronFormat.IncludeSeconds)]
         public void Parse_DoesNotThrowAnException_WhenExpressionIsMacro(string cronExpression, CronFormat format)
         {
-            CronExpression.Parse(cronExpression);
+            CronExpression.Parse(cronExpression, format);
         }
 
         [Theory]
@@ -440,25 +512,25 @@ namespace Cronos.Tests
         [Theory]
         [InlineData(DateTimeKind.Unspecified, false)]
         [InlineData(DateTimeKind.Unspecified, true)]
-        public void GetNextOccurrence_ThrowsAnException_WhenFromIsUnspecified(DateTimeKind kind, bool inclusive)
+        [InlineData(DateTimeKind.Local, false)]
+        [InlineData(DateTimeKind.Local, true)]
+        public void GetNextOccurrence_ThrowsAnException_WhenFromDoesNotHaveUtcKind(DateTimeKind kind, bool inclusive)
         {
             var from = new DateTime(2017, 03, 15, 0, 0, 0, kind);
             var exception = Assert.Throws<ArgumentException>(() => MinutelyExpression.GetNextOccurrence(from, inclusive));
 
-            Assert.Equal("from", exception.ParamName);
+            Assert.Equal("fromUtc", exception.ParamName);
         }
 
         [Theory]
-        [InlineData(DateTimeKind.Utc,   false)]
-        [InlineData(DateTimeKind.Utc,   true)]
-        [InlineData(DateTimeKind.Local, false)]
-        [InlineData(DateTimeKind.Local, true)]
-        public void GetNextOccurrence_ReturnsDateTimeWithCorrectKind(DateTimeKind kind, bool inclusive)
+        [InlineData(false)]
+        [InlineData(true)]
+        public void GetNextOccurrence_ReturnsDateTimeWithUtcKind(bool inclusive)
         {
-            var from = new DateTime(2017, 03, 22, 9, 32, 0, kind);
+            var from = new DateTime(2017, 03, 22, 9, 32, 0, DateTimeKind.Utc);
             var occurrence = MinutelyExpression.GetNextOccurrence(from, inclusive);
 
-            Assert.Equal(kind, occurrence?.Kind);
+            Assert.Equal(DateTimeKind.Utc, occurrence?.Kind);
         }
 
         [Theory]
@@ -833,22 +905,31 @@ namespace Cronos.Tests
         // 2016-01-23    2016-01-24    2016-01-25    2016-01-26    2016-01-27    2016-01-28    2016-01-29
         // 2016-01-30    2016-01-31
 
-        [InlineData("* * * * * 0L", "2017-01-29", "2017-01-29")]
-        [InlineData("* * * * * 0L", "2017-01-01", "2017-01-29")]
-        [InlineData("* * * * * 1L", "2017-01-30", "2017-01-30")]
-        [InlineData("* * * * * 1L", "2017-01-01", "2017-01-30")]
-        [InlineData("* * * * * 2L", "2017-01-31", "2017-01-31")]
-        [InlineData("* * * * * 2L", "2017-01-01", "2017-01-31")]
-        [InlineData("* * * * * 3L", "2017-01-25", "2017-01-25")]
-        [InlineData("* * * * * 3L", "2017-01-01", "2017-01-25")]
-        [InlineData("* * * * * 4L", "2017-01-26", "2017-01-26")]
-        [InlineData("* * * * * 4L", "2017-01-01", "2017-01-26")]
-        [InlineData("* * * * * 5L", "2017-01-27", "2017-01-27")]
-        [InlineData("* * * * * 5L", "2017-01-01", "2017-01-27")]
-        [InlineData("* * * * * 6L", "2017-01-28", "2017-01-28")]
-        [InlineData("* * * * * 6L", "2017-01-01", "2017-01-28")]
-        [InlineData("* * * * * 7L", "2017-01-29", "2017-01-29")]
-        [InlineData("* * * * * 7L", "2016-12-31", "2017-01-29")]
+        // ReSharper disable StringLiteralTypo
+        [InlineData("* * * * * 0L  ", "2017-01-29", "2017-01-29")]
+        [InlineData("* * * * * 0L  ", "2017-01-01", "2017-01-29")]
+        [InlineData("* * * * * SUNL", "2017-01-01", "2017-01-29")]
+        [InlineData("* * * * * 1L  ", "2017-01-30", "2017-01-30")]
+        [InlineData("* * * * * 1L  ", "2017-01-01", "2017-01-30")]
+        [InlineData("* * * * * MONL", "2017-01-01", "2017-01-30")]
+        [InlineData("* * * * * 2L  ", "2017-01-31", "2017-01-31")]
+        [InlineData("* * * * * 2L  ", "2017-01-01", "2017-01-31")]
+        [InlineData("* * * * * TUEL", "2017-01-01", "2017-01-31")]
+        [InlineData("* * * * * 3L  ", "2017-01-25", "2017-01-25")]
+        [InlineData("* * * * * 3L  ", "2017-01-01", "2017-01-25")]
+        [InlineData("* * * * * WEDL", "2017-01-01", "2017-01-25")]
+        [InlineData("* * * * * 4L  ", "2017-01-26", "2017-01-26")]
+        [InlineData("* * * * * 4L  ", "2017-01-01", "2017-01-26")]
+        [InlineData("* * * * * THUL", "2017-01-01", "2017-01-26")]
+        [InlineData("* * * * * 5L  ", "2017-01-27", "2017-01-27")]
+        [InlineData("* * * * * 5L  ", "2017-01-01", "2017-01-27")]
+        [InlineData("* * * * * FRIL", "2017-01-01", "2017-01-27")]
+        [InlineData("* * * * * 6L  ", "2017-01-28", "2017-01-28")]
+        [InlineData("* * * * * 6L  ", "2017-01-01", "2017-01-28")]
+        [InlineData("* * * * * SATL", "2017-01-01", "2017-01-28")]
+        [InlineData("* * * * * 7L  ", "2017-01-29", "2017-01-29")]
+        [InlineData("* * * * * 7L  ", "2016-12-31", "2017-01-29")]
+        // ReSharper restore StringLiteralTypo
 
         // Support '#' in day of week field.
 
@@ -941,6 +1022,7 @@ namespace Cronos.Tests
 
         [InlineData("* * * ? 11 *", "2016-10-09", "2016-11-01")]
 
+        [InlineData("? ? ? ? ? ?", "2016-12-09 16:46", "2016-12-09 16:46")]
         [InlineData("* * * * * ?", "2016-12-09 16:46", "2016-12-09 16:46")]
         [InlineData("* * * ? * *", "2016-03-09 16:46", "2016-03-09 16:46")]
         [InlineData("* * * * * ?", "2016-12-30 16:46", "2016-12-30 16:46")]
@@ -949,10 +1031,30 @@ namespace Cronos.Tests
         [InlineData("* * * ? * *", "2099-12-09 16:46", "2099-12-09 16:46")]
 
         // Day of 100-year and not 400-year.
-        [InlineData("* * * * * *", "1900-01-20 16:46", "1900-01-20 16:46")]
+        [InlineData("* * * * * *", "1900-02-20 16:46", "1900-02-20 16:46")]
+
+        // Day of 400-year
+        [InlineData("* * * * * *", "2000-02-28 16:46", "2000-02-28 16:46")]
 
         // Last day of 400-year.
         [InlineData("* * * * * *", "2000-12-31 16:46", "2000-12-31 16:46")]
+
+        // Case insensitive.
+        [InlineData("* *  *  lw   * *   ", "2017-05-30", "2017-05-31")]
+        [InlineData("* *  *  l-0w * *   ", "2016-02-01", "2016-02-29")]
+        [InlineData("0 30 17 27w  * 1l  ", "2017-03-10 17:45", "2017-03-27 17:30")]
+        [InlineData("0 30 17 27w  * mOnL", "2017-03-10 17:45", "2017-03-27 17:30")]
+
+        // Complex expressions
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:00", "2017-04-17 17:20")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:21", "2017-04-17 17:30")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:31", "2017-04-17 17:32")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:33", "2017-04-17 17:34")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:35", "2017-04-17 17:40")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:41", "2017-04-17 17:50")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:51", "2017-04-17 17:57")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:58", "2017-04-17 17:58")]
+        [InlineData("0 57,20/20,30/20,32-34/2,58 * * * * ", "2017-04-17 17:59", "2017-04-17 18:20")]
         public void GetNextOccurrence_ReturnsCorrectDate(string cronExpression, string fromString, string expectedString)
         {
             var expression = CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
@@ -965,36 +1067,66 @@ namespace Cronos.Tests
         }
 
         [Theory]
+        [InlineData(true, 00001)]
+        [InlineData(true, 09999)]
+        [InlineData(false, 0001)]
+        [InlineData(false, 9999)]
+        public void GetNextOccurrence_RoundsFromUtcUpToTheSecond(bool inclusiveFrom, int extraTicks)
+        {
+            var expression = CronExpression.Parse("* * * * * *", CronFormat.IncludeSeconds);
+            var fromUtc = new DateTime(2017, 07, 20, 11, 59, 59, DateTimeKind.Utc).AddTicks(extraTicks);
+
+            var occurrence = expression.GetNextOccurrence(fromUtc, inclusive: inclusiveFrom);
+
+            Assert.Equal(new DateTime(2017, 07, 20, 12, 0, 0, DateTimeKind.Utc), occurrence);
+        }
+
+        [Theory]
 
         // 2016-03-13 is date when the clock jumps forward from 1:59 am -05:00 standard time (ST) to 3:00 am -04:00 DST in Eastern Time Zone.
         // ________1:59 ST///invalid///3:00 DST________
 
         // Run missed.
 
-        [InlineData("0 */30 *      *  *  *    ", "2016-03-13 01:45 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 */30 */2    *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 1-58 */2    *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 0,30 0-23/2 *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 */30 2      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 0,30 2      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 */30 2      13 03 *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 0,30 02     13 03 *    ", "2016-03-13 01:45 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 30   2      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 0    */2    *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        [InlineData("0 30   0-23/2 *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
+        [InlineData("0 */30 *      *  *  *    ", "2016-03-13 01:45 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 */30 */2    *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 1-58 */2    *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 0,30 0-23/2 *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 */30 2      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 0,30 2      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 */30 2      13 03 *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 0,30 02     13 03 *    ", "2016-03-13 01:45 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 30   2      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 0    */2    *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+        [InlineData("0 30   0-23/2 *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+
+        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 01:59 -05:00", true)]
+        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 03:00 -04:00", "2016-03-13 03:00 -04:00", true)]
                                                                                                
-        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 01:59 -05:00")]
-        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 03:00 -04:00", "2016-03-13 03:00 -04:00")]
-                                                                                               
-        [InlineData("0 30   *      *  3  SUN#2", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00")]
-        public void GetNextOccurrence_HandleDST_WhenTheClockJumpsForward_And_TimeZoneIsEst(string cronExpression, string fromString, string expectedString)
+        [InlineData("0 30   *      *  3  SUN#2", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", true)]
+
+        [InlineData("0 */30 *      *  *  *    ", "2016-03-13 01:30 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 */30 */2    *  *  *    ", "2016-03-13 01:30 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 1-58 */2    *  *  *    ", "2016-03-13 01:58 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 0,30 0-23/2 *  *  *    ", "2016-03-13 00:30 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 0,30 2      *  *  *    ", "2016-03-12 02:30 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 */30 2      13 03 *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 0,30 02     13 03 *    ", "2016-03-13 01:45 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 30   2      *  *  *    ", "2016-03-12 02:30 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 0    */2    *  *  *    ", "2016-03-13 00:00 -05:00", "2016-03-13 03:00 -04:00", false)]
+        [InlineData("0 30   0-23/2 *  *  *    ", "2016-03-13 00:30 -05:00", "2016-03-13 03:00 -04:00", false)]
+
+        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", false)]
+
+        [InlineData("0 30   *      *  3  SUN#2", "2016-03-13 01:59 -05:00", "2016-03-13 03:00 -04:00", false)]
+        public void GetNextOccurrence_HandleDST_WhenTheClockJumpsForward_And_TimeZoneIsEst(string cronExpression, string fromString, string expectedString, bool inclusive)
         {
             var expression = CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
 
             var fromInstant = GetInstant(fromString);
             var expectedInstant = GetInstant(expectedString);
 
-            var executed = expression.GetNextOccurrence(fromInstant, EasternTimeZone, inclusive: true);
+            var executed = expression.GetNextOccurrence(fromInstant, EasternTimeZone, inclusive);
 
             Assert.Equal(expectedInstant, executed);
             Assert.Equal(expectedInstant.Offset, executed?.Offset);
@@ -1038,134 +1170,141 @@ namespace Cronos.Tests
 
         [Theory]
 
-        // 2016-03-13 is date when the clock jumps forward from 1:59 am -05:00 standard time (ST) to 3:00 am -04:00 DST in Eastern Time Zone.
-        // ________1:59 ST///invalid///3:00 DST________
-
-        // Run missed.
-
-        [InlineData("0 */30 *      *  *  *    ", "2016-03-13 01:45", "2016-03-13 03:00")]
-        [InlineData("0 */30 */2    *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 1-58 */2    *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 0,30 0-23/2 *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 */30 2      *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 0,30 2      *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 */30 2      13 03 *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 0,30 02     13 03 *    ", "2016-03-13 01:45", "2016-03-13 03:00")]
-        [InlineData("0 30   2      *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 0    */2    *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-        [InlineData("0 30   0-23/2 *  *  *    ", "2016-03-13 01:59", "2016-03-13 03:00")]
-
-        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 01:59", "2016-03-13 01:59")]
-        [InlineData("0 0,59 *      *  *  *    ", "2016-03-13 03:00", "2016-03-13 03:00")]
-
-        [InlineData("0 30   *      *  3  SUN#2", "2016-03-13 01:59", "2016-03-13 03:00")]
-
-        // From is invalid time.
-
-        [InlineData("0 30   2      *  *  *    ", "2016-03-13 02:01", "2016-03-13 03:00")]
-        [InlineData("0 30   2      *  *  *    ", "2016-03-13 02:30", "2016-03-13 03:00")]
-        public void GetNextOccurrence_HandleDST_WhenTheClockJumpsForward_And_FromHasLocalKind(string cronExpression, string fromString, string expectedString)
-        {
-            var expression = CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
-            expression.TestLocalZone = EasternTimeZone;
-
-            var fromLocal = GetLocalDateTime(fromString);
-            var expectedLocal = GetLocalDateTime(expectedString);
-
-            var executed = expression.GetNextOccurrence(fromLocal, inclusive: true);
-
-            Assert.Equal(expectedLocal, executed);
-            Assert.Equal(DateTimeKind.Local, executed?.Kind);
-        }
-
-        [Theory]
-
         // 2016-11-06 is date when the clock jumps backward from 2:00 am -04:00 DST to 1:00 am -05:00 ST in Eastern Time Zone.
         // _______1:00 DST____1:59 DST -> 1:00 ST____2:00 ST_______
 
         // Run at 2:00 ST because 2:00 DST is invalid.
-        [InlineData("0 */30 */2 * * *", "2016-11-06 01:30 -04:00", "2016-11-06 02:00 -05:00")]
-        [InlineData("0 0    */2 * * *", "2016-11-06 00:30 -04:00", "2016-11-06 02:00 -05:00")]
-        [InlineData("0 0    0/2 * * *", "2016-11-06 00:30 -04:00", "2016-11-06 02:00 -05:00")]
-        [InlineData("0 0    2-3 * * *", "2016-11-06 00:30 -04:00", "2016-11-06 02:00 -05:00")]
+        [InlineData("0 */30 */2 * * *", "2016-11-06 01:30 -04:00", "2016-11-06 02:00 -05:00", true)]
+        [InlineData("0 0    */2 * * *", "2016-11-06 00:30 -04:00", "2016-11-06 02:00 -05:00", true)]
+        [InlineData("0 0    0/2 * * *", "2016-11-06 00:30 -04:00", "2016-11-06 02:00 -05:00", true)]
+        [InlineData("0 0    2-3 * * *", "2016-11-06 00:30 -04:00", "2016-11-06 02:00 -05:00", true)]
 
         // Run twice due to intervals.
-        [InlineData("0 */30 *   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 */30 *   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 */30 *   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00")]
-        [InlineData("0 */30 *   * * *", "2016-11-06 01:15 -05:00", "2016-11-06 01:30 -05:00")]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00", true)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:15 -05:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:30 -05:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:45 -05:00", "2016-11-06 02:00 -05:00", true)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:30 -04:00", false)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:00 -05:00", false)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:00 -05:00", "2016-11-06 01:30 -05:00", false)]
+        [InlineData("0 */30 *   * * *", "2016-11-06 01:30 -05:00", "2016-11-06 02:00 -05:00", false)]
 
-        [InlineData("0 30   *   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 30   *   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00")]
+        [InlineData("0 30   *   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 30   *   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 30   *   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -05:00", false)]
+        [InlineData("0 30   *   * * *", "2016-11-06 01:30 -05:00", "2016-11-06 02:30 -05:00", false)]
 
-        [InlineData("0 30   */1  * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 30   */1  * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00")]
-        [InlineData("0 30   0/1  * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 30   0/1  * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00")]
+        [InlineData("0 30   */1  * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 30   */1  * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 30   0/1  * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 30   0/1  * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 30   */1  * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -05:00", false)]
+        [InlineData("0 30   0/1  * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -05:00", false)]
 
-        [InlineData("0 30   1-9 * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 30   1-9 * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00")]
+        [InlineData("0 30   1-9 * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 30   1-9 * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 30   1-9 * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:30 -05:00", false)]
 
-        [InlineData("0 */30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 */30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 */30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00")]
-        [InlineData("0 */30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:30 -05:00")]
-                                    
-        [InlineData("0 0/30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 0/30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 0/30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00")]
-        [InlineData("0 0/30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:30 -05:00")]
+        [InlineData("0 */30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 */30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 */30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00", true)]
+        [InlineData("0 */30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 */30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:30 -04:00", false)]
+        [InlineData("0 */30 1   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:00 -05:00", false)]
 
-        [InlineData("0 0-30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 0-30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:20 -04:00")]
-        [InlineData("0 0-30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00")]
-        [InlineData("0 0-30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:20 -05:00")]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00", true)]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:30 -05:00", true)]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:30 -04:00", false)]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:30 -04:00", "2016-11-06 01:00 -05:00", false)]
+        [InlineData("0 0/30 1   * * *", "2016-11-06 01:00 -05:00", "2016-11-06 01:30 -05:00", false)]
 
-        [InlineData("*/30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00")]
-        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:01 -04:00", "2016-11-06 01:00:30 -04:00")]
-        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:31 -04:00", "2016-11-06 01:00:00 -05:00")]
-        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:01 -05:00", "2016-11-06 01:00:30 -05:00")]
-        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:31 -05:00", "2016-11-07 01:00:00 -05:00")]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:20 -04:00", true)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00", true)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:20 -05:00", true)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:01 -04:00", false)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:21 -04:00", false)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:59 -04:00", "2016-11-06 01:00 -05:00", false)]
+        [InlineData("0 0-30 1   * * *", "2016-11-06 01:20 -05:00", "2016-11-06 01:21 -05:00", false)]
 
-        [InlineData("0/30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00")]
-        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:01 -04:00", "2016-11-06 01:00:30 -04:00")]
-        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:31 -04:00", "2016-11-06 01:00:00 -05:00")]
-        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:01 -05:00", "2016-11-06 01:00:30 -05:00")]
-        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:31 -05:00", "2016-11-07 01:00:00 -05:00")]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00", true)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:01 -04:00", "2016-11-06 01:00:30 -04:00", true)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:31 -04:00", "2016-11-06 01:00:00 -05:00", true)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:01 -05:00", "2016-11-06 01:00:30 -05:00", true)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:31 -05:00", "2016-11-07 01:00:00 -05:00", true)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00", false)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:00 -04:00", "2016-11-06 01:00:30 -04:00", false)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:30 -04:00", "2016-11-06 01:00:00 -05:00", false)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:00 -05:00", "2016-11-06 01:00:30 -05:00", false)]
+        [InlineData("*/30 0 1 * * *", "2016-11-06 01:00:30 -05:00", "2016-11-07 01:00:00 -05:00", false)]
 
-        [InlineData("0-30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00")]
-        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:01 -04:00", "2016-11-06 01:00:01 -04:00")]
-        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:31 -04:00", "2016-11-06 01:00:00 -05:00")]
-        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:01 -05:00", "2016-11-06 01:00:01 -05:00")]
-        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:31 -05:00", "2016-11-07 01:00:00 -05:00")]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00", true)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:01 -04:00", "2016-11-06 01:00:30 -04:00", true)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:31 -04:00", "2016-11-06 01:00:00 -05:00", true)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:01 -05:00", "2016-11-06 01:00:30 -05:00", true)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:31 -05:00", "2016-11-07 01:00:00 -05:00", true)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00", false)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:00 -04:00", "2016-11-06 01:00:30 -04:00", false)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:30 -04:00", "2016-11-06 01:00:00 -05:00", false)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:00 -05:00", "2016-11-06 01:00:30 -05:00", false)]
+        [InlineData("0/30 0 1 * * *", "2016-11-06 01:00:30 -05:00", "2016-11-07 01:00:00 -05:00", false)]
+
+        [InlineData("0-30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00", true)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:01 -04:00", "2016-11-06 01:00:01 -04:00", true)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:31 -04:00", "2016-11-06 01:00:00 -05:00", true)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:01 -05:00", "2016-11-06 01:00:01 -05:00", true)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:31 -05:00", "2016-11-07 01:00:00 -05:00", true)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 00:30:00 -04:00", "2016-11-06 01:00:00 -04:00", false)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:00 -04:00", "2016-11-06 01:00:01 -04:00", false)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:30 -04:00", "2016-11-06 01:00:00 -05:00", false)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:00 -05:00", "2016-11-06 01:00:01 -05:00", false)]
+        [InlineData("0-30 0 1 * * *", "2016-11-06 01:00:30 -05:00", "2016-11-07 01:00:00 -05:00", false)]
 
         // Duplicates skipped due to certain time.
-        [InlineData("0 0,30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 0,30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 0,30 1   * * *", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00")]
+        [InlineData("0 0,30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0,30 1   * * *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 0,30 1   * * *", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00", true)]
+        [InlineData("0 0,30 1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:30 -04:00", false)]
+        [InlineData("0 0,30 1   * * *", "2016-11-06 01:30 -04:00", "2016-11-07 01:00 -05:00", false)]
 
-        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00")]
+        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00", true)]
+        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:00 -04:00", "2016-11-06 01:30 -04:00", false)]
+        [InlineData("0 0,30 1   * 1/2 *", "2016-11-06 01:30 -04:00", "2016-11-07 01:00 -05:00", false)]
 
-        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00")]
-        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00")]
+        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:20 -04:00", "2016-11-06 01:30 -04:00", true)]
+        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00", true)]
+        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:00 -04:00", "2016-11-06 01:30 -04:00", false)]
+        [InlineData("0 0,30 1   6/1 1-12 0/1", "2016-11-06 01:30 -04:00", "2016-11-07 01:00 -05:00", false)]
 
-        [InlineData("0 0    1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00")]
-        [InlineData("0 0    1   * * *", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00")]
+        [InlineData("0 0    1   * * *", "2016-11-06 01:00 -04:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0    1   * * *", "2016-11-06 01:00 -05:00", "2016-11-07 01:00 -05:00", true)]
+        [InlineData("0 0    1   * * *", "2016-11-06 01:00 -04:00", "2016-11-07 01:00 -05:00", false)]
 
-        [InlineData("0 0    1   6 11 *", "2015-11-07 01:00 -05:00", "2016-11-06 01:00 -04:00")]
+        [InlineData("0 0    1   6 11 *", "2015-11-07 01:00 -05:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0    1   6 11 *", "2015-11-07 01:00 -05:00", "2016-11-06 01:00 -04:00", false)]
 
-        [InlineData("0 0    1   * 11 SUN#1", "2015-11-01 01:00 -05:00", "2016-11-06 01:00 -04:00")]
-        public void GetNextOccurrence_HandleDST_WhenTheClockJumpsBackward(string cronExpression, string fromString, string expectedString)
+        [InlineData("0 0    1   * 11 SUN#1", "2015-11-01 01:00 -05:00", "2016-11-06 01:00 -04:00", true)]
+        [InlineData("0 0    1   * 11 SUN#1", "2015-11-01 01:00 -05:00", "2016-11-06 01:00 -04:00", false)]
+
+        // Run at 02:00 ST because 02:00 doesn't exist in DST.
+
+        [InlineData("0 0 2 * * *", "2016-11-06 01:45 -04:00", "2016-11-06 02:00 -05:00", false)]
+        [InlineData("0 0 2 * * *", "2016-11-06 01:45 -05:00", "2016-11-06 02:00 -05:00", false)]
+        public void GetNextOccurrence_HandleDST_WhenTheClockJumpsBackward(string cronExpression, string fromString, string expectedString, bool inclusive)
         {
             var expression = CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
 
             var fromInstant = GetInstant(fromString);
             var expectedInstant = GetInstant(expectedString);
 
-            var executed = expression.GetNextOccurrence(fromInstant, EasternTimeZone, inclusive: true);
+            var executed = expression.GetNextOccurrence(fromInstant, EasternTimeZone, inclusive);
 
             Assert.Equal(expectedInstant, executed);
             Assert.Equal(expectedInstant.Offset, executed?.Offset);
@@ -1309,8 +1448,44 @@ namespace Cronos.Tests
         }
 
         [Theory]
+
+        // Dst doesn't affect result.
+
+        [InlineData("0 */30 * * * *", "2016-03-12 23:15 -05:00", "2016-03-12 23:30 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-03-12 23:45 -05:00", "2016-03-13 00:00 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 00:15 -05:00", "2016-03-13 00:30 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 00:45 -05:00", "2016-03-13 01:00 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 01:45 -05:00", "2016-03-13 03:00 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 03:15 -04:00", "2016-03-13 03:30 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 03:45 -04:00", "2016-03-13 04:00 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 04:15 -04:00", "2016-03-13 04:30 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-03-13 04:45 -04:00", "2016-03-13 05:00 -04:00")]
+
+        [InlineData("0 */30 * * * *", "2016-11-05 23:10 -04:00", "2016-11-05 23:30 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-11-05 23:50 -04:00", "2016-11-06 00:00 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 00:10 -04:00", "2016-11-06 00:30 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 00:50 -04:00", "2016-11-06 01:00 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 01:10 -04:00", "2016-11-06 01:30 -04:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 01:50 -04:00", "2016-11-06 01:00 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 01:10 -05:00", "2016-11-06 01:30 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 01:50 -05:00", "2016-11-06 02:00 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 02:10 -05:00", "2016-11-06 02:30 -05:00")]
+        [InlineData("0 */30 * * * *", "2016-11-06 02:50 -05:00", "2016-11-06 03:00 -05:00")]
+        public void GetNextOccurrence_ReturnsCorrectDateTimeOffset(string cronExpression, string fromString, string expectedString)
+        {
+            var expression = CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
+
+            var fromInstant = GetInstant(fromString);
+            var expectedInstant = GetInstant(expectedString);
+
+            var occurrence = expression.GetNextOccurrence(fromInstant, EasternTimeZone, inclusive: true);
+
+            Assert.Equal(expectedInstant, occurrence);
+            Assert.Equal(expectedInstant.Offset, occurrence?.Offset);
+        }
+
+        [Theory]
         [InlineData("* * * * 4 *", "2099-12-13 00:00:00")]
-        [InlineData("* * * * * *", "2100-01-01 00:00:01")]
         public void GetNextOccurrence_ReturnsNull_When_NextOccurrenceIsBeyondMaxValue(string cronExpression, string fromString)
         {
             var expression = CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
@@ -1319,10 +1494,10 @@ namespace Cronos.Tests
             var fromUtc = fromWithOffset.UtcDateTime;
 
             var occurrenceDateTime = expression.GetNextOccurrence(fromUtc, TimeZoneInfo.Utc, inclusive: true);
-            Assert.Equal(null, occurrenceDateTime);
+            Assert.Null(occurrenceDateTime);
 
             var occurrenceWithOffset = expression.GetNextOccurrence(fromWithOffset, TimeZoneInfo.Utc);
-            Assert.Equal(null, occurrenceWithOffset);
+            Assert.Null(occurrenceWithOffset);
         }
 
         [Theory]
@@ -1424,7 +1599,8 @@ namespace Cronos.Tests
         [InlineData("* * 21    *    SUN#4", "1970-01-01")]
         [InlineData("* * 1     *    SUN#5", "1970-01-01")]
         [InlineData("* * 28    *    SUN#5", "1970-01-01")]
-                                    
+        [InlineData("* * 1-28  *    SUN#5", "1970-01-01")]
+
         [InlineData("* * 8     *    MON#1", "1970-01-01")]
         [InlineData("* * 31    *    MON#1", "1970-01-01")]
         [InlineData("* * 15    *    TUE#2", "1970-01-01")]
@@ -1510,21 +1686,6 @@ namespace Cronos.Tests
             var fromInstant = GetInstantFromLocalTime(fromString, TimeZoneInfo.Utc);
 
             var occurrence = expression.GetNextOccurrence(fromInstant.UtcDateTime);
-
-            Assert.Null(occurrence);
-        }
-
-        [Theory]
-        [InlineData("* * 30   2  *", "2080-01-01")]
-        [InlineData("* * L-30 11 *", "2080-01-01")]
-        public void GetNextOccurrence_ReturnsNull_WhenCronExpressionIsUnreachableAndFromIsLocalDateTime(string cronExpression, string fromString)
-        {
-            var expression = CronExpression.Parse(cronExpression);
-            expression.TestLocalZone = EasternTimeZone;
-
-            var fromLocal = GetLocalDateTime(fromString);
-
-            var occurrence = expression.GetNextOccurrence(fromLocal);
 
             Assert.Null(occurrence);
         }
@@ -1949,6 +2110,7 @@ namespace Cronos.Tests
 
         [InlineData("* * ? 11 *", "2016-10-09", "2016-11-01")]
 
+        [InlineData("? ? ? ? ?", "2016-12-09 16:46", "2016-12-09 16:46")]
         [InlineData("* * * * ?", "2016-12-09 16:46", "2016-12-09 16:46")]
         [InlineData("* * ? * *", "2016-03-09 16:46", "2016-03-09 16:46")]
         [InlineData("* * * * ?", "2016-12-30 16:46", "2016-12-30 16:46")]
@@ -1977,6 +2139,17 @@ namespace Cronos.Tests
         [InlineData("@monthly     ", "2017-03-23 16:46", "2017-04-01 00:00")]
         [InlineData("@yearly      ", "2017-03-23 16:46", "2018-01-01 00:00")]
         [InlineData("@annually    ", "2017-03-23 16:46", "2018-01-01 00:00")]
+
+        // Case-insensitive.
+        [InlineData("@EVERY_SECOND", "2017-03-23 16:46:05", "2017-03-23 16:46:05")]
+
+        [InlineData("@EVERY_MINUTE", "2017-03-23 16:46", "2017-03-23 16:46")]
+        [InlineData("@HOURLY      ", "2017-03-23 16:46", "2017-03-23 17:00")]
+        [InlineData("@DAILY       ", "2017-03-23 16:46", "2017-03-24 00:00")]
+        [InlineData("@MIDNIGHT    ", "2017-03-23 16:46", "2017-03-24 00:00")]
+        [InlineData("@MONTHLY     ", "2017-03-23 16:46", "2017-04-01 00:00")]
+        [InlineData("@YEARLY      ", "2017-03-23 16:46", "2018-01-01 00:00")]
+        [InlineData("@ANNUALLY    ", "2017-03-23 16:46", "2018-01-01 00:00")]
         public void GetNextOccurrence_ReturnsCorrectDate_WhenExpressionIsMacros(string cronExpression, string fromString, string expectedString)
         {
             var expression = CronExpression.Parse(cronExpression);
@@ -2057,31 +2230,6 @@ namespace Cronos.Tests
         }
 
         [Theory]
-        [InlineData("* * * * *", "2017-03-16 16:00", "2017-03-16 16:01")]
-        [InlineData("5 * * * *", "2017-03-16 16:05", "2017-03-16 17:05")]
-        [InlineData("* 5 * * *", "2017-03-16 05:00", "2017-03-16 05:01")]
-        [InlineData("* * 5 * *", "2017-03-05 16:00", "2017-03-05 16:01")]
-        [InlineData("* * * 5 *", "2017-05-16 16:00", "2017-05-16 16:01")]
-        [InlineData("* * * * 5", "2017-03-17 16:00", "2017-03-17 16:01")]
-        [InlineData("5 5 * * *", "2017-03-16 05:05", "2017-03-17 05:05")]
-        [InlineData("5 5 5 * *", "2017-03-05 05:05", "2017-04-05 05:05")]
-        [InlineData("5 5 5 5 *", "2017-05-05 05:05", "2018-05-05 05:05")]
-        [InlineData("5 5 5 5 5", "2017-05-05 05:05", "2023-05-05 05:05")]
-        public void GetNextOccurrence_ReturnsCorrectDate_WhenFromIsLocalDateTimeAndInclusiveIsFalse(string expression, string fromString, string expectedString)
-        {
-            var cronExpression = CronExpression.Parse(expression);
-            cronExpression.TestLocalZone = EasternTimeZone;
-
-            var fromLocal = GetLocalDateTime(fromString);
-            var expectedLocal = GetLocalDateTime(expectedString);
-
-            var nextOccurrence = cronExpression.GetNextOccurrence(fromLocal);
-
-            Assert.Equal(expectedLocal, nextOccurrence);
-            Assert.Equal(DateTimeKind.Local, nextOccurrence?.Kind);
-        }
-
-        [Theory]
         [InlineData("* * * * * *", "2017-03-16 16:00:00", "2017-03-16 16:00:01")]
         [InlineData("5 * * * * *", "2017-03-16 16:00:05", "2017-03-16 16:01:05")]
         [InlineData("* 5 * * * *", "2017-03-16 16:05:00", "2017-03-16 16:05:01")]
@@ -2094,7 +2242,7 @@ namespace Cronos.Tests
         [InlineData("5 5 5 5 * *", "2017-03-05 05:05:05", "2017-04-05 05:05:05")]
         [InlineData("5 5 5 5 5 *", "2017-05-05 05:05:05", "2018-05-05 05:05:05")]
         [InlineData("5 5 5 5 5 5", "2017-05-05 05:05:05", "2023-05-05 05:05:05")]
-        public void GetNextOccurrence_ReturnsCorrectDate_When6fiedsExpressionIsUsedAndInclusiveIsFalse(string expression, string fromString, string expectedString)
+        public void GetNextOccurrence_ReturnsCorrectDate_When6fieldsExpressionIsUsedAndInclusiveIsFalse(string expression, string fromString, string expectedString)
         {
             var cronExpression = CronExpression.Parse(expression, CronFormat.IncludeSeconds);
 
@@ -2105,7 +2253,497 @@ namespace Cronos.Tests
             Assert.Equal(GetInstantFromLocalTime(expectedString, EasternTimeZone), nextOccurrence);
         }
 
-        private static IEnumerable<object[]> GetTimeZones()
+        [Fact]
+        public void GetOccurrences_DateTime_ThrowsAnException_WhenFromGreaterThanTo()
+        {
+            var expression = CronExpression.Parse("* * * * *");
+            Assert.Throws<ArgumentException>(
+                () => expression.GetOccurrences(DateTime.UtcNow, DateTime.UtcNow.AddHours(-5)).ToArray());
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTime_ReturnsEmptyEnumerable_WhenNoOccurrencesFound()
+        {
+            var expression = CronExpression.Parse("* * 30 FEB *");
+
+            var occurrences = expression.GetOccurrences(
+                DateTime.UtcNow, 
+                DateTime.UtcNow.AddYears(1));
+
+            Assert.Empty(occurrences);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTime_ReturnsCollectionThatDoesNotIncludeToByDefault()
+        {
+            var expression = CronExpression.Parse("* 00 26 04 *");
+            var from = new DateTime(2017, 04, 26, 00, 00, 00, 000, DateTimeKind.Utc);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2))
+                .ToArray();
+
+            Assert.Equal(2, occurrences.Length);
+            Assert.Equal(from, occurrences[0]);
+            Assert.Equal(from.AddMinutes(1), occurrences[1]);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTime_HandlesFromExclusiveArgument()
+        {
+            var expression = CronExpression.Parse("* 00 26 04 *");
+            var from = new DateTime(2017, 04, 26, 00, 00, 00, 000, DateTimeKind.Utc);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), fromInclusive: false)
+                .ToArray();
+
+            Assert.Single(occurrences);
+            Assert.Equal(from.AddMinutes(1), occurrences[0]);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTime_HandlesToInclusiveArgument()
+        {
+            var expression = CronExpression.Parse("* 00 26 04 *");
+            var from = new DateTime(2017, 04, 26, 00, 00, 00, 000, DateTimeKind.Utc);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), toInclusive: true)
+                .ToArray();
+
+            Assert.Equal(3, occurrences.Length);
+            Assert.Equal(from.AddMinutes(2), occurrences[2]);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeTimeZone_ThrowsAnException_WhenFromGreaterThanTo()
+        {
+            var expression = CronExpression.Parse("* * * * *");
+            Assert.Throws<ArgumentException>(
+                () => expression.GetOccurrences(DateTime.UtcNow, DateTime.UtcNow.AddHours(-5), EasternTimeZone).ToArray());
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeTimeZone_ReturnsEmptyEnumerable_WhenNoOccurrencesFound()
+        {
+            var expression = CronExpression.Parse("* * 30 FEB *");
+
+            var occurrences = expression.GetOccurrences(
+                DateTime.UtcNow, 
+                DateTime.UtcNow.AddYears(1), 
+                EasternTimeZone);
+
+            Assert.Empty(occurrences);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeTimeZone_ReturnsCollectionThatDoesNotIncludeToByDefault()
+        {
+            var expression = CronExpression.Parse("* 20 25 04 *");
+            var from = new DateTime(2017, 04, 26, 00, 00, 00, 000, DateTimeKind.Utc);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), EasternTimeZone)
+                .ToArray();
+
+            Assert.Equal(2, occurrences.Length);
+            Assert.Equal(from, occurrences[0]);
+            Assert.Equal(from.AddMinutes(1), occurrences[1]);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeTimeZone_HandlesFromExclusiveArgument()
+        {
+            var expression = CronExpression.Parse("* 20 25 04 *");
+            var from = new DateTime(2017, 04, 26, 00, 00, 00, 000, DateTimeKind.Utc);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), EasternTimeZone, fromInclusive: false)
+                .ToArray();
+
+            Assert.Single(occurrences);
+            Assert.Equal(from.AddMinutes(1), occurrences[0]);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeTimeZone_HandlesToInclusiveArgument()
+        {
+            var expression = CronExpression.Parse("* 20 25 04 *");
+            var from = new DateTime(2017, 04, 26, 00, 00, 00, 000, DateTimeKind.Utc);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), EasternTimeZone, toInclusive: true)
+                .ToArray();
+
+            Assert.Equal(3, occurrences.Length);
+            Assert.Equal(from.AddMinutes(2), occurrences[2]);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeOffset_ThrowsAnException_WhenFromGreaterThanTo()
+        {
+            var expression = CronExpression.Parse("* * * * *");
+            Assert.Throws<ArgumentException>(
+                () => expression.GetOccurrences(DateTimeOffset.Now, DateTimeOffset.Now.AddHours(-5), EasternTimeZone).ToArray());
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeOffset_ReturnsEmptyEnumerable_WhenNoOccurrencesFound()
+        {
+            var expression = CronExpression.Parse("* * 30 FEB *");
+
+            var occurrences = expression.GetOccurrences(
+                DateTimeOffset.Now, 
+                DateTimeOffset.Now.AddYears(1), 
+                EasternTimeZone);
+
+            Assert.Empty(occurrences);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeOffset_ReturnsCollectionThatDoesNotIncludeToByDefault()
+        {
+            var expression = CronExpression.Parse("* 20 25 04 *");
+            var from = new DateTimeOffset(2017, 04, 26, 00, 00, 00, 000, TimeSpan.Zero);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), EasternTimeZone)
+                .ToArray();
+
+            Assert.Equal(2, occurrences.Length);
+            Assert.Equal(from, occurrences[0]);
+            Assert.Equal(from.AddMinutes(1), occurrences[1].UtcDateTime);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeOffset_HandlesFromExclusiveArgument()
+        {
+            var expression = CronExpression.Parse("* 20 25 04 *");
+            var from = new DateTimeOffset(2017, 04, 26, 00, 00, 00, 000, TimeSpan.Zero);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), EasternTimeZone, fromInclusive: false)
+                .ToArray();
+
+            Assert.Single(occurrences);
+            Assert.Equal(from.AddMinutes(1), occurrences[0].UtcDateTime);
+        }
+
+        [Fact]
+        public void GetOccurrences_DateTimeOffset_HandlesToInclusiveArgument()
+        {
+            var expression = CronExpression.Parse("* 20 25 04 *");
+            var from = new DateTimeOffset(2017, 04, 26, 00, 00, 00, 000, TimeSpan.Zero);
+
+            var occurrences = expression
+                .GetOccurrences(from, from.AddMinutes(2), EasternTimeZone, toInclusive: true)
+                .ToArray();
+
+            Assert.Equal(3, occurrences.Length);
+            Assert.Equal(from.AddMinutes(2), occurrences[2].UtcDateTime);
+        }
+
+        [Theory]
+        [InlineData("* * * * *", "* * * * *")]
+
+        [InlineData("* * * * *", "0/2,1/2    * * * *")]
+        [InlineData("* * * * *", "1/2,0-59/2 * * * *")]
+        [InlineData("* * * * *", "0-59       * * * *")]
+        [InlineData("* * * * *", "0,1,2-59   * * * *")]
+        [InlineData("* * * * *", "0-59/1     * * * *")]
+        [InlineData("* * * * *", "50-49      * * * *")]
+
+        [InlineData("* * * * *", "* 0/3,2/3,1/3 * * *")]
+        [InlineData("* * * * *", "* 0-23/2,1/2  * * *")]
+        [InlineData("* * * * *", "* 0-23        * * *")]
+        [InlineData("* * * * *", "* 0-23/1      * * *")]
+        [InlineData("* * * * *", "* 12-11       * * *")]
+
+        [InlineData("* * * * *", "* * 1/2,2/2     * *")]
+        [InlineData("* * * * *", "* * 1-31/2,2/2  * *")]
+        [InlineData("* * * * *", "* * 1-31        * *")]
+        [InlineData("* * * * *", "* * 1-31/1      * *")]
+        [InlineData("* * * * *", "* * 5-4         * *")]
+
+        [InlineData("* * * * *", "* * * 1/2,2/2    *")]
+        [InlineData("* * * * *", "* * * 1-12/2,2/2 *")]
+        [InlineData("* * * * *", "* * * 1-12       *")]
+        [InlineData("* * * * *", "* * * 1-12/1     *")]
+        [InlineData("* * * * *", "* * * 12-11      *")]
+
+        [InlineData("* * * * *", "* * * * 0/2,1/2    ")]
+        [InlineData("* * * * *", "* * * * SUN/2,MON/2")]
+        [InlineData("* * * * *", "* * * * 0-6/2,1/2  ")]
+        [InlineData("* * * * *", "* * * * 0-7/2,1/2  ")]
+        [InlineData("* * * * *", "* * * * 0-7/2,MON/2")]
+        [InlineData("* * * * *", "* * * * 0-6        ")]
+        [InlineData("* * * * *", "* * * * 0-7        ")]
+        [InlineData("* * * * *", "* * * * SUN-SAT    ")]
+        [InlineData("* * * * *", "* * * * 0-6/1      ")]
+        [InlineData("* * * * *", "* * * * 0-7/1      ")]
+        [InlineData("* * * * *", "* * * * SUN-SAT/1  ")]
+        [InlineData("* * * * *", "* * * * MON-SUN    ")]
+
+        [InlineData("* * *     * 0  ", "* * *     * 7  ")]
+        [InlineData("* * *     * 0  ", "* * *     * SUN")]
+        [InlineData("* * LW    * *  ", "* * LW    * *  ")]
+        [InlineData("* * L-20W * 2  ", "* * L-20W * 2  ")]
+        [InlineData("* * *     * 0#1", "* * *     * 0#1")]
+        [InlineData("* * *     * 0L ", "* * *     * 7L ")]
+        [InlineData("* * L-3W  * 0L ", "* * L-3W  * 0L ")]
+        [InlineData("1 1 1     1 1  ", "1 1 1     1 1  ")]
+        [InlineData("* * *     * *  ", "* * ?     * *  ")]
+        [InlineData("* * *     * *  ", "* * *     * ?  ")]
+
+        [InlineData("1-5 * * * *", "1-5 * * * *")]
+        [InlineData("1-5 * * * *", "1-5/1 * * * *")]
+        [InlineData("* * * * *", "0/1 * * * *")]
+        [InlineData("1 * * * *", "1-1 * * * *")]
+        [InlineData("*/4 * * * *", "0-59/4 * * * *")]
+
+        [InlineData("1-5 1-5 1-5 1-5 1-5", "1-5 1-5 1-5 1-5 1-5")]
+
+        [InlineData("50-15 * * * *", "50-15      * * * *")]
+        [InlineData("50-15 * * * *", "0-15,50-59 * * * *")]
+
+        [InlineData("* 20-15 * * *", "* 20-15      * * *")]
+        [InlineData("* 20-15 * * *", "* 0-15,20-23 * * *")]
+
+        [InlineData("* * 20-15 * *", "* * 20-15      * *")]
+        [InlineData("* * 20-15 * *", "* * 1-15,20-31 * *")]
+
+        [InlineData("* * * 10-3 *", "* * * 10-3      *")]
+        [InlineData("* * * 10-3 *", "* * * 1-3,10-12 *")]
+
+        [InlineData("* * * * 5-2", "* * * * 5-2    ")]
+        [InlineData("* * * * 5-2", "* * * * 0-2,5-7")]
+        [InlineData("* * * * 5-2", "* * * * 0-2,5-6")]
+        [InlineData("* * * * 5-2", "* * * * 1-2,5-7")]
+
+        [InlineData("* * * * FRI-TUE", "* * * * FRI-TUE        ")]
+        [InlineData("* * * * FRI-TUE", "* * * * SUN-TUE,FRI-SUN")]
+        [InlineData("* * * * FRI-TUE", "* * * * SUN-TUE,FRI-SAT")]
+        [InlineData("* * * * FRI-TUE", "* * * * MON-TUE,FRI-SUN")]
+        public void Equals_ReturnsTrue_WhenCronExpressionsAreEqual(string leftExpression, string rightExpression)
+        {
+            var leftCronExpression = CronExpression.Parse(leftExpression);
+            var rightCronExpression = CronExpression.Parse(rightExpression);
+
+            Assert.True(leftCronExpression.Equals(rightCronExpression));
+            Assert.True(leftCronExpression == rightCronExpression);
+            Assert.False(leftCronExpression != rightCronExpression);
+            Assert.True(leftCronExpression.GetHashCode() == rightCronExpression.GetHashCode());
+        }
+
+        [Fact]
+        public void Equals_ReturnsFalse_WhenOtherIsNull()
+        {
+            var cronExpression = CronExpression.Parse("* * * * *");
+
+            Assert.False(cronExpression.Equals(null));
+            Assert.False(cronExpression == null);
+        }
+
+        [Theory]
+        [InlineData("1 1 1 1 1", "2 1 1 1 1")]
+        [InlineData("1 1 1 1 1", "1 2 1 1 1")]
+        [InlineData("1 1 1 1 1", "1 1 2 1 1")]
+        [InlineData("1 1 1 1 1", "1 1 1 2 1")]
+        [InlineData("1 1 1 1 1", "1 1 1 1 2")]
+        [InlineData("* * * * *", "1 1 1 1 1")]
+
+        [InlineData("* * 31 1 *", "* * L    1 *")]
+        [InlineData("* * L  * *", "* * LW   * *")]
+        [InlineData("* * LW * *", "* * L-1W * *")]
+        [InlineData("* * *  * 0", "* * L-1W * 0#1")]
+        public void Equals_ReturnsFalse_WhenCronExpressionsAreNotEqual(string leftExpression, string rightExpression)
+        {
+            var leftCronExpression = CronExpression.Parse(leftExpression);
+            var rightCronExpression = CronExpression.Parse(rightExpression);
+
+            Assert.False(leftCronExpression.Equals(rightCronExpression));
+            Assert.True(leftCronExpression != rightCronExpression);
+            Assert.True(leftCronExpression.GetHashCode() != rightCronExpression.GetHashCode());
+        }
+
+        [Theory]
+
+        // Second specified.
+        
+        [InlineData("*      * * * * *", "*                * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("0      * * * * *", "0                * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("1,2    * * * * *", "1,2              * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("1-3    * * * * *", "1,2,3            * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("57-3   * * * * *", "0,1,2,3,57,58,59 * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("*/10   * * * * *", "0,10,20,30,40,50 * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("0/10   * * * * *", "0,10,20,30,40,50 * * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("0-20/5 * * * * *", "0,5,10,15,20     * * * * *", CronFormat.IncludeSeconds)]
+
+        [InlineData("10,56-3/2 * * * * *", "0,2,10,56,58 * * * * *", CronFormat.IncludeSeconds)]
+
+        // Minute specified.
+        
+        [InlineData("*      * * * *", "0 *                * * * *", CronFormat.Standard)]
+        [InlineData("0      * * * *", "0 0                * * * *", CronFormat.Standard)]
+        [InlineData("1,2    * * * *", "0 1,2              * * * *", CronFormat.Standard)]
+        [InlineData("1-3    * * * *", "0 1,2,3            * * * *", CronFormat.Standard)]
+        [InlineData("57-3   * * * *", "0 0,1,2,3,57,58,59 * * * *", CronFormat.Standard)]
+        [InlineData("*/10   * * * *", "0 0,10,20,30,40,50 * * * *", CronFormat.Standard)]
+        [InlineData("0/10   * * * *", "0 0,10,20,30,40,50 * * * *", CronFormat.Standard)]
+        [InlineData("0-20/5 * * * *", "0 0,5,10,15,20     * * * *", CronFormat.Standard)]
+
+        [InlineData("10,56-3/2 * * * *", "0 0,2,10,56,58 * * * *", CronFormat.Standard)]
+
+        [InlineData("* *      * * * *", "* *                * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* 0      * * * *", "* 0                * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* 1,2    * * * *", "* 1,2              * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* 1-3    * * * *", "* 1,2,3            * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* 57-3   * * * *", "* 0,1,2,3,57,58,59 * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* */10   * * * *", "* 0,10,20,30,40,50 * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* 0/10   * * * *", "* 0,10,20,30,40,50 * * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* 0-20/5 * * * *", "* 0,5,10,15,20     * * * *", CronFormat.IncludeSeconds)]
+
+        [InlineData("* 10,56-3/2 * * * *", "* 0,2,10,56,58 * * * *", CronFormat.IncludeSeconds)]
+
+        // Hour specified.
+        
+        [InlineData("* *      * * *", "0 * *             * * *", CronFormat.Standard)]
+        [InlineData("* 0      * * *", "0 * 0             * * *", CronFormat.Standard)]
+        [InlineData("* 1,2    * * *", "0 * 1,2           * * *", CronFormat.Standard)]
+        [InlineData("* 1-3    * * *", "0 * 1,2,3         * * *", CronFormat.Standard)]
+        [InlineData("* 22-3   * * *", "0 * 0,1,2,3,22,23 * * *", CronFormat.Standard)]
+        [InlineData("* */10   * * *", "0 * 0,10,20       * * *", CronFormat.Standard)]
+        [InlineData("* 0/10   * * *", "0 * 0,10,20       * * *", CronFormat.Standard)]
+        [InlineData("* 0-20/5 * * *", "0 * 0,5,10,15,20  * * *", CronFormat.Standard)]
+
+        [InlineData("* 10,22-3/2 * * *", "0 * 0,2,10,22    * * *", CronFormat.Standard)]
+
+        [InlineData("* * *      * * *", "* * *             * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * 0      * * *", "* * 0             * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * 1,2    * * *", "* * 1,2           * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * 1-3    * * *", "* * 1,2,3         * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * 22-3   * * *", "* * 0,1,2,3,22,23 * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * */10   * * *", "* * 0,10,20       * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * 0/10   * * *", "* * 0,10,20       * * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * 0-20/5 * * *", "* * 0,5,10,15,20  * * *", CronFormat.IncludeSeconds)]
+
+        [InlineData("* * 10,22-3/2 * * *", "* * 0,2,10,22    * * *", CronFormat.IncludeSeconds)]
+
+        // Day specified.
+        
+        [InlineData("* * *      * *", "0 * * *           * *", CronFormat.Standard)]
+        [InlineData("* * 1      * *", "0 * * 1           * *", CronFormat.Standard)]
+        [InlineData("* * 1,2    * *", "0 * * 1,2         * *", CronFormat.Standard)]
+        [InlineData("* * 1-3    * *", "0 * * 1,2,3       * *", CronFormat.Standard)]
+        [InlineData("* * 30-3   * *", "0 * * 1,2,3,30,31 * *", CronFormat.Standard)]
+        [InlineData("* * */10   * *", "0 * * 1,11,21,31  * *", CronFormat.Standard)]
+        [InlineData("* * 1/10   * *", "0 * * 1,11,21,31  * *", CronFormat.Standard)]
+        [InlineData("* * 1-20/5 * *", "0 * * 1,6,11,16   * *", CronFormat.Standard)]
+
+        [InlineData("* * L     * *", "0 * * L     * *", CronFormat.Standard)]
+        [InlineData("* * L-0   * *", "0 * * L     * *", CronFormat.Standard)]
+        [InlineData("* * L-10  * *", "0 * * L-10  * *", CronFormat.Standard)]
+        [InlineData("* * LW    * *", "0 * * LW    * *", CronFormat.Standard)]
+        [InlineData("* * L-0W  * *", "0 * * LW    * *", CronFormat.Standard)]
+        [InlineData("* * L-10W * *", "0 * * L-10W * *", CronFormat.Standard)]
+        [InlineData("* * 10W   * *", "0 * * 10W   * *", CronFormat.Standard)]
+
+        [InlineData("* * 10,29-3/2 * *", "0 * * 2,10,29,31 * *", CronFormat.Standard)]
+
+        [InlineData("* * * *      * *", "* * * *           * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 1      * *", "* * * 1           * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 1,2    * *", "* * * 1,2         * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 1-3    * *", "* * * 1,2,3       * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 30-3   * *", "* * * 1,2,3,30,31 * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * */10   * *", "* * * 1,11,21,31  * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 1/10   * *", "* * * 1,11,21,31  * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 1-20/5 * *", "* * * 1,6,11,16   * *", CronFormat.IncludeSeconds)]
+
+        [InlineData("* * * L     * *", "* * * L     * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * L-0   * *", "* * * L     * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * L-10  * *", "* * * L-10  * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * LW    * *", "* * * LW    * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * L-0W  * *", "* * * LW    * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * L-10W * *", "* * * L-10W * *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * 10W   * *", "* * * 10W   * *", CronFormat.IncludeSeconds)]
+
+        [InlineData("* * * 10,29-3/2 * *", "* * * 2,10,29,31 * *", CronFormat.IncludeSeconds)]
+
+        // Month specified.
+        
+        [InlineData("* * * *      *", "0 * * * *           *", CronFormat.Standard)]
+        [InlineData("* * * 1      *", "0 * * * 1           *", CronFormat.Standard)]
+        [InlineData("* * * 1,2    *", "0 * * * 1,2         *", CronFormat.Standard)]
+        [InlineData("* * * 1-3    *", "0 * * * 1,2,3       *", CronFormat.Standard)]
+        [InlineData("* * * 11-3   *", "0 * * * 1,2,3,11,12 *", CronFormat.Standard)]
+        [InlineData("* * * */10   *", "0 * * * 1,11        *", CronFormat.Standard)]
+        [InlineData("* * * 1/10   *", "0 * * * 1,11        *", CronFormat.Standard)]
+        [InlineData("* * * 1-12/5 *", "0 * * * 1,6,11      *", CronFormat.Standard)]
+                         
+        [InlineData("* * * 10,11-3/2 *", "0 * * * 1,3,10,11 *", CronFormat.Standard)]
+
+        [InlineData("* * * * *      *", "* * * * *           *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * 1      *", "* * * * 1           *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * 1,2    *", "* * * * 1,2         *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * 1-3    *", "* * * * 1,2,3       *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * 11-3   *", "* * * * 1,2,3,11,12 *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * */10   *", "* * * * 1,11        *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * 1/10   *", "* * * * 1,11        *", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * 1-12/5 *", "* * * * 1,6,11      *", CronFormat.IncludeSeconds)]
+
+        [InlineData("* * * * 10,11-3/2 *", "* * * * 1,3,10,11 *", CronFormat.IncludeSeconds)]
+
+        // Day of week specified.
+        
+        [InlineData("* * * * *    ", "0 * * * * *      ", CronFormat.Standard)]
+        [InlineData("* * * * MON  ", "0 * * * * 1      ", CronFormat.Standard)]
+        [InlineData("* * * * 1    ", "0 * * * * 1      ", CronFormat.Standard)]
+        [InlineData("* * * * 1,2  ", "0 * * * * 1,2    ", CronFormat.Standard)]
+        [InlineData("* * * * 1-3  ", "0 * * * * 1,2,3  ", CronFormat.Standard)]
+        [InlineData("* * * * 6-1  ", "0 * * * * 0,1,6  ", CronFormat.Standard)]
+        [InlineData("* * * * */2  ", "0 * * * * 0,2,4,6", CronFormat.Standard)]
+        [InlineData("* * * * 0/2  ", "0 * * * * 0,2,4,6", CronFormat.Standard)]
+        [InlineData("* * * * 1-6/5", "0 * * * * 1,6    ", CronFormat.Standard)]
+
+        [InlineData("* * * * 0L ", "0 * * * * 0L ", CronFormat.Standard)]
+        [InlineData("* * * * 5#1", "0 * * * * 5#1", CronFormat.Standard)]
+
+        // ReSharper disable once StringLiteralTypo
+        [InlineData("* * * * SUNL ", "0 * * * * 0L ", CronFormat.Standard)]
+        [InlineData("* * * * FRI#1", "0 * * * * 5#1", CronFormat.Standard)]
+
+        [InlineData("* * * * 3,6-2/3", "0 * * * * 2,3,6", CronFormat.Standard)]
+
+        [InlineData("* * * * * *    ", "* * * * * *      ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * MON  ", "* * * * * 1      ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 1    ", "* * * * * 1      ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 1,2  ", "* * * * * 1,2    ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 1-3  ", "* * * * * 1,2,3  ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 6-1  ", "* * * * * 0,1,6  ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * */2  ", "* * * * * 0,2,4,6", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 0/2  ", "* * * * * 0,2,4,6", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 1-6/5", "* * * * * 1,6    ", CronFormat.IncludeSeconds)]
+
+        [InlineData("* * * * * 0L ", "* * * * * 0L ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * 5#1", "* * * * * 5#1", CronFormat.IncludeSeconds)]
+
+        // ReSharper disable once StringLiteralTypo
+        [InlineData("* * * * * SUNL ", "* * * * * 0L ", CronFormat.IncludeSeconds)]
+        [InlineData("* * * * * FRI#1", "* * * * * 5#1", CronFormat.IncludeSeconds)]
+
+        [InlineData("* * * * * 3,6-2/3", "* * * * * 2,3,6", CronFormat.IncludeSeconds)]
+        public void ToString_ReturnsCorrectString(string cronExpression, string expectedResult, CronFormat format)
+        {
+            var expression = CronExpression.Parse(cronExpression, format);
+
+            // remove redundant spaces.
+            var expectedString = Regex.Replace(expectedResult, @"\s+", " ").Trim();
+            
+            Assert.Equal(expectedString, expression.ToString());
+        }
+
+        public static IEnumerable<object[]> GetTimeZones()
         {
             yield return new object[] {EasternTimeZone};
             yield return new object[] {JordanTimeZone};
@@ -2155,24 +2793,6 @@ namespace Cronos.Tests
                 DateTimeStyles.None);
 
             return dateTime;
-        }
-
-        private static DateTime GetLocalDateTime(string dateTimeString)
-        {
-            dateTimeString = dateTimeString.Trim();
-
-            var dateTime = DateTime.ParseExact(
-                dateTimeString,
-                new[]
-                {
-                    "yyyy-MM-dd HH:mm:ss",
-                    "yyyy-MM-dd HH:mm",
-                    "yyyy-MM-dd",
-                },
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None);
-
-            return DateTime.SpecifyKind(dateTime, DateTimeKind.Local);
         }
     }
 }

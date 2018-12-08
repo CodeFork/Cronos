@@ -2,7 +2,7 @@
 
 os: Visual Studio 2017
 
-version: 0.4.1-build-0{build}
+version: 0.7.0-build-0{build}
 
 branches:
   only:
@@ -12,14 +12,12 @@ branches:
 pull_requests:
   do_not_increment_build_number: true
 
-shallow_clone: true
-
 #---------------------------------#
 #       build configuration       #
 #---------------------------------#
 
 build_script:
-  - powershell .\build.ps1 -Target CI
+  - powershell .\build.ps1 -Target Pack
 
 after_build:
   - "SET PATH=C:\\Python34;C:\\Python34\\Scripts;%PATH%"
@@ -49,6 +47,6 @@ deploy:
 
   - provider: NuGet
     api_key: 
-      secure: P7SfXBeFQixVqdEFlyFtRb39IytB+/RijG46obop/pv64uBk7uEba4p4oNZOvHde
+      secure: O6j1PyBQ7asspWVxYk0vnaldaF8P7h1xyFREiGAVh3hVAnkclKWVG74JxkErmHLm
     on:
       appveyor_repo_tag: true

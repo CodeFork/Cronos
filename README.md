@@ -1,24 +1,33 @@
 # Cronos
 [![NuGet](https://img.shields.io/nuget/v/Cronos.svg)](https://www.nuget.org/packages/Cronos) [![AppVeyor](https://img.shields.io/appveyor/ci/odinserj/cronos/master.svg?label=appveyor)](https://ci.appveyor.com/project/odinserj/cronos/branch/master) [![Travis](https://img.shields.io/travis/HangfireIO/Cronos/master.svg?label=travis)](https://travis-ci.org/HangfireIO/Cronos) [![Codecov branch](https://img.shields.io/codecov/c/github/HangfireIO/Cronos/master.svg)](https://codecov.io/gh/HangfireIO/Cronos)
 
-**Cronos** is a .NET library for parsing Cron expressions and calculating next occurrences, that targets .NET Framework and .NET Standard. It was designed with time zones in mind, and correctly handles forward/backward Daylight Saving Time transitions (as in *nix Cron). And it's blazingly fast!
+Cronos is a .NET library for parsing Cron expressions and calculating next occurrences. It was designed with time zones in mind, and intuitively handles [Daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) (also known as Summer time) transitions as in *nix Cron.
 
 *Please note this library doesn't include any task/job scheduler, it only works with Cron expressions.*
 
-* Supports **standard Cron format** with optional seconds.
-* Supports **non-standard characters** like `L`, `W`, `#` and their combinations.
-* Supports **reversed ranges**, like `23-01` (equivalent to `23,00,01`) or `DEC-FEB` (equivalent to `DEC,JAN,FEB`).
-* Supports **time zones**, and performs all the date/time conversions for you.
-* **Does not skip** occurrences on Standard Time (ST) to Daylight Saving Time (DST) transitions (when the clock jumps forward).
-* **Does not skip** interval-based occurrences on DST to ST transitions (backward jump).
-* **Does not retry** non-interval based occurrences on DST to ST transitions (backward jump).
-* When both *day of week* and *day of month* specified, *AND* operator will be used (different than in *nix Cron).
-* For day of week field, 0 and 7 stays for Sunday, 1 for Monday.
-* Contains 1000+ unit tests to ensure all is working correctly.
+* Supports standard Cron format with optional seconds.
+* Supports non-standard characters like `L`, `W`, `#` and their combinations.
+* Supports reversed ranges, like `23-01` (equivalent to `23,00,01`) or `DEC-FEB` (equivalent to `DEC,JAN,FEB`).
+* Supports time zones, and performs all the date/time conversions for you.
+* Does not skip occurrences, when the clock jumps forward to Daylight saving time (known as Summer time).
+* Does not skip interval-based occurrences, when the clock jumps backward from Summer time.
+* Does not retry non-interval based occurrences, when the clock jumps backward from Summer time.
+* Contains 1000+ unit tests to ensure everything is working correctly.
+
+## Compatibility
+
+This section explains how Cron expressions should be converted, when moving to Cronos.
+
+Library | Comments
+--- | ---
+Vixie Cron | When both day-of-month and day-of-week are specified, Cronos uses AND operator for matching (Vixie Cron uses OR operator for backward compatibility).
+Quartz.NET | Cronos uses different, but more intuitive Daylight saving time handling logic (as in Vixie Cron). Full month names such as `september` aren't supported. Day-of-week field in Cronos has different values, `0` and `7` stand for Sunday, `1` for Monday, etc. (as in Vixie Cron). Year field is not supported. 
+NCrontab | Compatible
+CronNET | Compatible
 
 ## Installation
 
-Cronos is distributed as a NuGet package, you can install it from the official NuGet Gallery. Please use the following command to install it using the NuGet Package Manager Console window.
+Cronos is distributed as a [NuGet package](http://www.nuget.org/packages/Cronos/), you can install it from the official NuGet Gallery. Please use the following command to install it using the NuGet Package Manager Console window.
 
 ```
 PM> Install-Package Cronos
@@ -26,43 +35,23 @@ PM> Install-Package Cronos
 
 ## Usage
 
-We've tried to do our best to make Cronos API as simple and predictable in corner cases as possible. To calculate the next occurrence, you need to create an instance of the `CronExpression` class, and call its `GetNextOccurrence` method. To learn about Cron format, please see the next section.
+We've tried to do our best to make Cronos API as simple and predictable in corner cases as possible. So you can only use `DateTime` with `DateTimeKind.Utc` specified (for example, `DateTime.UtcNow`), or `DateTimeOffset` classes to calculate next occurrences. You **can not use** local `DateTime` objects (such as `DateTime.Now`), because this may lead to ambiguity during DST transitions, and an exception will be thrown if you attempt to use them.
+
+To calculate the next occurrence, you need to create an instance of the `CronExpression` class, and call its `GetNextOccurrence` method. To learn about Cron format, please refer to the next section.
 
 ```csharp
 using Cronos;
 
 CronExpression expression = CronExpression.Parse("* * * * *");
 
-DateTime? nextLocal = expression.GetNextOccurrence(DateTime.Now);
-DateTime? nextUtc   = expression.GetNextOccurrence(DateTime.UtcNow);
+DateTime? nextUtc = expression.GetNextOccurrence(DateTime.UtcNow);
 ```
 
-Both the `nextLocal` and `nextUtc` will contain the next occurrence, *after the given time*, or `null` value when it is unreachable (for example, Feb 30).
-
-All the time zone handling logic will be done behind the scenes: `nextLocal` will contain an occurrence in the `TimeZoneInfo.Local` time zone with `DateTimeKind.Local` specified, and `nextUtc` will contain an occurrence in the `TimeZoneInfo.Utc` zone with `DateTimeKind.Utc` specified. All Daylight Saving Time transition's corner cases are handled automatically (see below).
-
-When invalid Cron expression is given, an instance of the `CronFormatException` class is thrown.
-
-### Passing custom DateTime or DateTimeOffset
-
-When dealing with custom `DateTime` instances, always specify its `Kind` property (for example, using the `DateTime.SpecifyKind` method). When a date/time with `DateTimeKind.Unspecified` is given, Cronos will throw the `ArgumentException`, because it's unclear what time zone to use, and the result is prone to errors.
-
-```csharp
-CronExpression expression = CronExpression.Parse("* * * * *");
-DateTime from = new DateTime(2017, 03, 21, 18, 23, 00, DateTimeKind.Local); // Or DateTimeKind.Utc
-
-DateTime? next = expression.GetNextOccurrence(from);
-```
-
-If you are using the `DateTimeOffset` class, you either need to convert it to local or UTC first (using `UtcDateTime` or `LocalDateTime` properties), or specify a time zone explicitly (please see the next section).
-
-```csharp
-DateTime? next = expression.GetNextOccurrence(DateTimeOffset.Now.UtcDateTime);
-```
+The `nextUtc` will contain the next occurrence in UTC, *after the given time*, or `null` value when it is unreachable (for example, Feb 30). If an invalid Cron expression is given, the `CronFormatException` exception is thrown.
 
 ### Working with time zones
 
-It is possible to specify a time zone directly, but in this case you should always pass `DateTime` with `DateTimeKind.Utc` flag, or use `DateTimeOffset` class.
+It is possible to specify a time zone directly, in this case you should pass `DateTime` with `DateTimeKind.Utc` flag, or use `DateTimeOffset` class, that's is smart enough to always point to an exact, non-ambiguous instant.
 
 ```csharp
 CronExpression expression = CronExpression.Parse("* * * * *");
@@ -72,20 +61,46 @@ DateTime?       next = expression.GetNextOccurrence(DateTime.UtcNow, easternTime
 DateTimeOffset? next = expression.GetNextOccurrence(DateTimeOffset.UtcNow, easternTimeZone);
 ```
 
-Resulting time will be in UTC. All Daylight Saving Time transition's corner cases are handled automatically (see below).
+If you passed a `DateTime` object, resulting time will be in UTC. If you used `DateTimeOffset`, resulting object will contain the **correct offset**, so don't forget to use it especially during DST transitions (see below).
+
+### Working with local time
+
+If you just want to make all the calculations using local time, you'll have to use the `DateTimeOffset` class, because as I've said earlier, `DateTime` objects may be ambiguous during Summer time transitions. You can get the resulting local time, using the `DateTimeOffset.DateTime` property.
+
+```csharp
+CronExpression expression = CronExpression.Parse("* * * * *");
+DateTimeOffset? next = expression.GetNextOccurrence(DateTimeOffset.Now, TimeZoneInfo.Local);
+
+var nextLocalTime = next?.DateTime;
+```
 
 ### Adding seconds to an expression
 
-If you want to specify seconds, use another overload of the `Parse` method and specify the `CronFields` argument as below:
+If you want to specify seconds, use another overload of the `Parse` method and specify the `CronFormat` argument as below:
 
 ```csharp
-CronExpression expression = CronExpression.Parse("*/30 * * * * *", CronFields.IncludeSeconds);
+CronExpression expression = CronExpression.Parse("*/30 * * * * *", CronFormat.IncludeSeconds);
 DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow));
 ```
 
+### Getting occurrences within a range
+
+You can also get occurrences within a fixed date/time range using the `GetOccurrences` method. By default, the `from` argument will be included when matched, and `to` argument will be excluded. However, you can configure that behavior.
+
+```csharp
+CronExpression expression = CronExpression.Parse("* * * * *");
+DateTime? occurrence = expression.GetOccurrences(
+    DateTime.UtcNow,
+    DateTime.UtcNow.AddYears(1),
+    fromInclusive: true,
+    toInclusive: false);
+```
+
+There are different overloads for this method to support `DateTimeOffset` arguments or time zones.
+
 ## Cron format
 
-**Cronos** supports expressions made of second (optional), minute, hour, day of month, month, day of week fields:
+Cron expression is a mask to define fixed times, dates and intervals. The mask consists of second (optional), minute, hour, day-of-month, month and day-of-week fields. All of the fields allow you to specify multiple values, and any given date/time will satisfy the specified Cron expression, if all the fields contain a matching value.
 
                                            Allowed values    Allowed special characters   Comment
 
@@ -94,186 +109,184 @@ DateTime? next = expression.GetNextOccurrence(DateTime.UtcNow));
     │ │ ┌───────────── hour                0-23              * , - /                      
     │ │ │ ┌───────────── day of month      1-31              * , - / L W ?                
     │ │ │ │ ┌───────────── month           1-12 or JAN-DEC   * , - /                      
-    │ │ │ │ │ ┌───────────── day of week   0-7  or MON-SUN   * , - / # L ?                0 and 7 means SUN
-    │ │ │ │ │ │
-    │ │ │ │ │ │
+    │ │ │ │ │ ┌───────────── day of week   0-6  or SUN-SAT   * , - / # L ?                Both 0 and 7 means SUN
     │ │ │ │ │ │
     * * * * * *
 
-**Star `*`**
+### Base characters
 
-`*` means any value. Used to select all values within a field. For example, `*` in the hour field means "every hour":
+In all fields you can use number, `*` to mark field as *any value*, `-` to specify ranges of values. Reversed ranges like `22-1`(equivalent to `22,23,0,1,2`) are also supported.
 
-| Expression    | Description                          |
-|---------------|--------------------------------------|
-| `* * * * * *` | Every second                         |
-| `* * * * *`   | Every minute                         |
-| `30 3 * * *`  | At 3:30 AM every day                 |
-| `0  0 1 * *`  | At midnight, on day 1 of every month |
+It's possible to define **step** combining `/` with `*`, numbers and ranges. For example, `*/5` in minute field describes *every 5 minute* and `1-15/3` in day-of-month field – *every 3 days from the 1st to the 15th*. Pay attention that `*/24` is just equivalent to `0,24,48` and `*/24` in minute field doesn't literally mean *every 24 minutes* it means *every 0,24,48 minute*.
 
-**Comma `,`**
+Concatinate values and ranges by `,`. Comma works like `OR` operator. So `3,5-11/3,12` is equivalent to `3,5,8,11,12`.
 
-Commas are used to separate items of a list.
+In month and day-of-week fields, you can use names of months or days of weeks abbreviated to first three letters (`Jan-Dec` or `Mon-Sun`) instead of their numeric values. Full names like `JANUARY` or `MONDAY` **aren't supported**.
 
-| Expression        | Description                           |
-|-------------------|---------------------------------------|
-| `15,45 * * * * *` | Every minute at 15 and 45 seconds     |
-| `* * * * SAT,SUN` | Every minute on saturdays and sundays |
-| `* * * * 6,7`     | Every minute on saturdays and sundays |
-| `* * * * 0,6`     | Every minute on saturdays and sundays |
+For day of week field, both `0` and `7` stays for Sunday, 1 for Monday.
 
-**Hyphens `-`**
+| Expression           | Description                                                                           |
+|----------------------|---------------------------------------------------------------------------------------|
+| `* * * * *`          | Every minute                                                                          |
+| `0  0 1 * *`         | At midnight, on day 1 of every month                                                  |
+| `*/5 * * * *`        | Every 5 minutes                                                                       |
+| `30,45-15/2 1 * * *` | Every 2 minute from 1:00 AM to 01:15 AM and from 1:45 AM to 1:59 AM and at 1:30 AM    |
+| `0 0 * * MON-FRI`    | At 00:00, Monday through Friday                                                       |
 
-Hyphens define ranges. 
+### Special characters
 
-| Expression        | Description                                                       |
-|-------------------|-------------------------------------------------------------------|
-| `0-30 1 * * *`    | Every minute between 01:00 AM and 01:30 AM                        |
-| `45-15 1 * * *`   | Every minute from 1:00 AM to 01:15 AM and from 1:45 AM to 1:59 AM |
-| `0 0 * * MON-FRI` | At 00:00, Monday through Friday                                   |
+Most expressions you can describe using base characters. If you want to deal with more complex cases like *the last day of month* or *the 2nd Saturday* use special characters:
 
-**L character**
+**`L`** stands for "last". When used in the day-of-week field, it allows you to specify constructs such as *the last Friday* (`5L`or `FRIL`). In the day-of-month field, it specifies the last day of the month.
 
-`L` stands for "last". When used in the day-of-week field, it allows you to specify constructs such as "the last Friday" (`5L`) of a given month. In the day-of-month field, it specifies the last day of the month.
+**`W`** in day-of-month field is the nearest weekday. Use `W`  with single value (not ranges, steps or `*`) to define *the nearest weekday* to the given day. In this case there are two base rules to determine occurrence: we should shift to **the nearest weekday** and **can't shift to different month**. Thus if given day is Saturday we shift to Friday, if it is Sunday we shift to Monday. **But** if given day is **the 1st day of month** (e.g. `0 0 1W * *`) and it is Saturday we shift to the 3rd Monday, if given day is **last day of month** (`0 0 31W 0 0`) and it is Sunday we shift to that Friday. Mix `L` (optionaly with offset) and `W` characters to specify *last weekday of month* `LW` or more complex like `L-5W`.
 
-| Expression    | Description                                          |
-|---------------|------------------------------------------------------|
-| `0 0 L * *`   | At 00:00 AM on the last day of the month             |
-| `0 0 L-1 * *` | At 00:00 AM the day before the last day of the month |
-| `0 0 * * 1L`  | At 00:00 AM on the last monday of the month          |
+**`#`** in day-of-week field allows to specify constructs such as *second Saturday* (`6#2` or `SAT#2`).
 
-**W character**
-
-You can specify *the nearest weekday* using `W` in the day-of-month field. There are two base rules to determine occurrence: we should shift to **the nearest weekday** and **can't shift to different month**. Thus if given day is Saturday we shift to Friday, if it is Sunday we shift to Monday. **But** if we have `0 0 1W * *` and the 1th is Saturday we shift to the 3th Monday. And if we have `0 0 LW * *` and last day of month is Sunday we shift to that Friday.
+**`?`** is synonym of `*`. It's supported but not obligatory, so `0 0 5 * ?` is the same as `0 0 5 * *`.
 
 | Expression        | Description                                              |
 |-------------------|----------------------------------------------------------|
-| `0 0 1W * *`      | At 00:00 AM, on the first weekday of every month         |
-| `0 0 10W * *`     | At 00:00 AM on the weekday nearest day 10 of every month |
-| `0 0 LW * *`      | At 00:00, on the last weekday of the month               |
+| `0 0 L   * *`     | At 00:00 AM on the last day of the month                 |
+| `0 0 L-1 * *`     | At 00:00 AM the day before the last day of the month     |
+| `0 0 3W  * *`     | At 00:00 AM, on the 3rd weekday of every month           |
+| `0 0 LW  * *`     | At 00:00 AM, on the last weekday of the month            |
+| `0 0 *   * 2L`    | At 00:00 AM on the last tuesday of the month             |
+| `0 0 *   * 6#3`   | At 00:00 AM on the third Saturday of the month           |
+| `0 0 ?   1 MON#1` | At 00:00 AM on the first Monday of the January           |
 
-**Hash `#`**
+### Specify Day of month and Day of week
 
-Sometimes you need to specify *first Friday* or *second Saturday*. It's possible using `#` character:
+You can set both **day-of-month** and **day-of-week**, it allows you to specify constructs such as **Friday the thirteenth**. Thus `0 0 13 * 5` means at 00:00, Friday the thirteenth.
 
-| Expression        | Description                                              |
-|-------------------|----------------------------------------------------------|
-| `0 0 * * 6#3`     | At 00:00 AM on the third Saturday of the month           |
-| `0 0 * * 1#1`     | At 00:00 AM on the first Monday of the month             |
-| `0 0 * 1 MON#1`   | At 00:00 AM on the first Monday of the January           |
+It differs from Unix crontab and Quartz cron implementations. Crontab handles it like `OR` operator: occurrence can happen in given day of month or given day of week. So `0 0 13 * 5` means *at 00:00 AM, every friday or every the 13th of a month*. Quartz doesn't allow specify both day-of-month and day-of-week.
 
-**Question mark `?`**
+### Macro
 
-`?` is "no specific value" and a synonym of `*`. It's supported but **non-obligatory**. `0 0 5 * *` is the same as `0 0 5 * ?`. You can specify `?` only in one field. For example, `* * ? * ?` is wrong expression.
+A macro is a string starting with `@` and representing a shortcut for simple cases like *every day* or *every minute*.
 
-| Expression    | Description                          |
-|---------------|--------------------------------------|
-| `* * * * * ?` | Every second                         |
-| `* * * ? * *` | Every second                         |
-| `* * * * ?`   | Every minute                         |
-| `* * ? * *`   | Every minute                         |
-| `0  0 1 * ?`  | At midnight, on day 1 of every month |
-| `0  0 ? * 1`  | At midnight every Monday             |
+ Macro          | Equivalent    | Comment
+----------------|---------------| -------
+`@every_second` | `* * * * * *` | Run once a second
+`@every_minute` | `* * * * *`   | Run once a minute at the beginning of the minute
+`@hourly`       | `0 * * * *`   | Run once an hour at the beginning of the hour
+`@daily`        | `0 0 * * *`   | Run once a day at midnight
+`@midnight`     | `0 0 * * *`   | Run once a day at midnight
+`@weekly`       | `0 0 * * 0`   | Run once a week at midnight on Sunday morning
+`@monthly`      | `0 0 1 * *`   | Run once a month at midnight of the first day of the month
+`@yearly`       | `0 0 1 1 *`   | Run once a year at midnight of 1 January
+`@annually`     | `0 0 1 1 *`   | Run once a year at midnight of 1 January
 
-**Slash `/`**
+### Cron grammar
 
-Slashes can be combined with ranges to specify step values. 
+Cronos parser uses following case-insensitive grammar:
 
-| Expression        | Description                                                                                |
-|-------------------|--------------------------------------------------------------------------------------------|
-| `*/5 * * * * *`   | Every 5 seconds                                                                            |
-| `0 1/5 * * *`     | Every 5 hours, starting at 01:00                                                           |
-| `*/30 */6 * * *`  | Every 30 minutes, every 6 hours: at 00:00, 00:30, 06:00, 06:30, 12:00, 12:30, 18:00, 18:30 |
-| `0 0  15/2 * *`   | At 00:00, every 2 days, starting on day 15 of the month                                    |
-| `0 0 * 2/3 *`     | At 00:00, every 3 months, February through December                                        |
-| `0 0 * * 1/2`     | At 00:00, every 2 days of the week, starting on Monday                                     |
-
-**Specify Day of month and Day of week**
-
-You can specify both Day of month and Day of week, it allows you to specify constructs such as "Friday the thirteenth". 
-
-| Expression        | Description                                                                                |
-|-------------------|--------------------------------------------------------------------------------------------|
-| `0 0 13 * 5`      | At 00:00, Friday the thirteenth                                                            |
-| `0 0 13 2 5`      | At 00:00, Friday the thirteenth, only in February                                          |
+```
+cron :: expression | macro
+expression :: [second space] minute space hour space day-of-month space month space day-of-week
+second :: field
+minute :: field
+hour :: field
+day-of-month :: '*' step | lastday | value [ 'W' | range [list] ] | '?'
+month :: field
+day-of-week :: '*' step | value [ dowspec | range [list] ] | '?'
+macro :: '@every_second' | '@every_minute' | '@hourly' | '@daily' | '@midnight' | '@weekly' | '@monthly' |
+         '@yearly' | '@annually'
+field :: '*' step | value [range] [list] | '?'
+list :: { ',' value [range] }
+range :: '-' value [step] | [step]
+step :: '/' number
+value :: number | name
+name :: month-name | dow-name
+month-name :: 'JAN' | 'FEB' | 'MAR' | 'APR' | 'MAY' | 'JUN' | 'JUL' | 'AUG' | 'SEP' | 'OCT' | 'NOV' | 'DEC'
+dow-name :: 'SUN' | 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT'
+dowspec :: 'L' | '#' number
+lastday :: 'L' ['-' number] ['W']
+number :: digit | number digit
+space :: ' ' | '\t'
+```
 
 ## Daylight Saving Time
 
-**Cronos** correctly handles the transition from standard time (ST) to Daylight saving time (DST). 
+Cronos is the only library to handle daylight saving time transitions in intuitive way with the same behavior as Vixie Cron (utility for *nix systems). During a spring transition, we don't skip occurrences scheduled to invalid time during. In an autumn transition we don't get duplicate occurrences for daily expressions, and don't skip interval expressions when the local time is ambiguous.
 
-### Setting the clocks forward
+### Transition to Summer time (in spring)
 
-If next occurrence falls on invalid time when the clocks jump forward then next occurrence will shift to next valid time. See example:
+During the transition to Summer time, the clock is moved forward, for example the next minute after `01:59 AM` is `03:00 AM`. So any daily Cron expression that should match `02:30 AM`, points to an invalid time. It doesn't exist, and can't be mapped to UTC.
 
-```csharp
-var expression = CronExpression.Parse("0 30 2 * * *");
-var easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+Cronos adjusts the next occurrence to the next valid time in these cases. If you use Cron to schedule jobs, you may have shorter or longer intervals between runs when this happen, but you'll not lose your jobs:
 
-// 2016-03-13 - the day when DST starts in Eastern time zone. The clocks jump from 1:59 am ST to 3:00 am DST. 
-// So duration from 2:00 am to 2:59 am is invalid.
+```
+"30 02 * * *" (every day at 02:30 AM)
 
-var startTime = new DateTimeOffset(2016, 03, 13, 01, 50, 00, easternTimeZone.BaseUtcOffset);
-
-// Should be scheduled to 2:30 am ST but that time is invalid. Next valid time is 3:00 am DST.
-var next = expression.GetOccurrenceAfter(startTime, easternTimeZone);
-
-Console.WriteLine("Next occurrence at " + next);
-
-// Next occurrence at 2016-03-13 03:00:00 AM -04:00
+Mar 13, 02:30 +03:00 – run
+Mar 14, 03:00 +04:00 – run (adjusted)
+Mar 15, 02:30 +04:00 – run
 ```
 
-### Setting the clocks backward
+### Transition from Summer time (in autumn)
 
-When DST ends you set the clocks backward so you have duration which repeats twice. If you are in USA the duration was e.g. 2016/11/06 from 1:00 am to 1:59 am. If next occurrence falls on this duration behavior depends on kind of cron expression: non-interval or interval.
+When Daylight Saving Time ends you set the clocks backward so there is duration which repeats twice. For example, after `01:59 AM` you get `01:00 AM` again, so the interval between `01:00 AM` to `02:00 AM` (excluding) is ambiguous, and can be mapped to multiple UTC offsets.
 
-#### Non-interval
+We don't want to have multiple occurrences of daily expressions during this transition, but at the same time we want to schedule interval expressions as usually, without skipping them. So we have different behavior for different Cron expressions.
 
-Cron expression is non-interval if it describes certain time of a day, e.g. `"0 30 1 * * ?"` - 1:30 am every day, or `"0 0,45 1,2 * * ?"` - 1:00 am, 1:45 am, 2:00 am, 2:45 am every day. In this case each cron job will be scheduled only before clock shifts. Reason is when you describe certain time of day you mean that it should be scheduled once a day regardless whether there is clock shifts in that day.
+#### Interval expression
 
-```csharp
-var expression = CronExpression.Parse("0 30 1 * * ?");
-var easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+Cron expression is **interval based** whose second, minute or hour field contains `*`, ranges or steps, e.g. `30 * * * *` (hour field), `* 1 * * *` (minute field), `0,5 0/10 1 * * *`. In this case there are expectations that occurrences should happen periodically during the day and this rule can't be broken by time transitions. Thus for **interval based** expressions occurrences will be before and after clock shifts.
 
-var startTime = new DateTime(2016, 11, 06, 00, 59, 00);
-var startTimeWithOffset = new DateTimeOffset(startTime, easternTimeZone.GetUtcOffset(startTime));
+Consider `*/30 * * * *` interval expression. It should occur every 30 minutes no matter what.
 
-var next = expression.GetOccurrenceAfter(startTimeWithOffset, easternTimeZone);
-Console.WriteLine("Next occurrence at " + next);
-
-next = expression.GetOccurrenceAfter(next.Value);
-Console.WriteLine("Next occurrence at " + next);
-
-// Next occurrence at 2016-03-13 01:30:00 AM -04:00
-// Next occurrence at 2016-03-13 02:30:00 AM -05:00
+```
+Nov 08, 00:30 +04:00 – run
+Nov 08, 01:00 +04:00 – run
+Nov 08, 01:30 +04:00 – run
+Nov 08, 01:00 +03:00 – run
+Nov 08, 01:30 +03:00 – run
+Nov 08, 02:00 +03:00 – run
 ```
 
-#### Interval
+#### Non-interval expression
 
-Cron expression is interval if it describes secondly, minutely or hourly job, e.g. `"0 30 * * * ?"`, `"0 * 1 * * ?"`, `"0,5 */10 * * * ?"`. In this case each cron job will be scheduled before and after clock shifts.
+Cron expression is **non-interval based** whose second, minute or hour field **does not contain** `*`, ranges or steps, e.g. `0 30 1 * * *` or `0 0,45 1,2 * * *`. We expect they occur given number of times per day. Thus for **non-interval** expressions occurrences will be just before clock shifts.
 
-```csharp
-var expression = CronExpression.Parse("0 30 * * * ?");
-var easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+Consider `30 1 * * *` non-interval expression. It should occur once a day no matter what.
 
-var startTime = new DateTime(2016, 11, 06, 00, 59, 00);
-var startTimeWithOffset = new DateTimeOffset(startTime, easternTimeZone.GetUtcOffset(startTime));
+```
+Nov 07, 01:30 +04:00 – run
+Nov 08, 01:30 +04:00 – run
+Nov 08, 01:30 +03:00 – skip
+Nov 09, 01:30 +03:00 – run
+```
 
-var next = expression.GetOccurrenceAfter(startTimeWithOffset, easternTimeZone);
-Console.WriteLine("Next occurrence at " + next);
+## Benchmarks
 
-next = expression.GetOccurrenceAfter(next.Value);
-Console.WriteLine("Next occurrence at " + next);
+Since [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet) project appeared, it's hard to ignore the performance. We tried hard to make Cronos not only feature-rich, but also really fast when parsing expressions and calculating next occurrences. As a result, Cronos is faster more than in an order of magnitude than alternative libraries, here is a small comparison:
 
-next = expression.GetOccurrenceAfter(next.Value);
-Console.WriteLine("Next occurrence at " + next);
+```
+Cronos Method                               |           Mean |        StdDev
+------------------------------------------- | -------------- | -------------
+CronExpression.Parse("* * * * *")           |     30.8473 ns |     0.0515 ns
+CronExpression.Parse("*/10 12-20 ? DEC 3")  |     81.5010 ns |     0.0924 ns
+Simple.GetNextOccurrence(DateTime.UtcNow)   |    123.4712 ns |     0.5928 ns
+Complex.GetNextOccurrence(DateTime.UtcNow)  |    212.0422 ns |     0.3997 ns
 
-// Next occurrence at 2016-11-06 01:30:00 AM -04:00
-// Next occurrence at 2016-11-06 01:30:00 AM -05:00
-// Next occurrence at 2016-11-06 02:30:00 AM -05:00
+NCrontab Method                             |           Mean |        StdDev
+------------------------------------------- | -------------- | -------------
+CrontabSchedule.Parse("* * * * *")          |  1,813.7313 ns |     3.3718 ns
+CrontabSchedule.Parse("*/10 12-20 * DEC 3") |  3,174.3625 ns |     6.8522 ns
+Simple.GetNextOccurrence(DateTime.UtcNow)   |    147.7866 ns |     0.1689 ns
+Complex.GetNextOccurrence(DateTime.UtcNow)  |  1,001.3253 ns |     1.6205 ns
+
+Quartz Method                               |           Mean |        StdDev
+------------------------------------------- | -------------- | -------------
+new CronExpression("* * * * * ?")           | 48,157.7744 ns | 1,417.3101 ns
+new CronExpression("* */10 12-20 ? DEC 3")  | 33,731.9992 ns |    38.3192 ns
+Simple.GetTimeAfter(DateTimeOffset.Now)     |  1,416.9867 ns |     1.2784 ns
+Complex.GetTimeAfter(DateTimeOffset.Now)    |  6,573.0269 ns |     7.9192 ns
 ```
 
 ## License
 
-Cronos is under the [Apache License 2.0][Apache-2.0].
+Copyright © 2017 Sergey Odinokov. Cronos is licensed under [The MIT License (MIT)][LICENSE].
 
-[Apache-2.0]:LICENSE
+[LICENSE]:LICENSE

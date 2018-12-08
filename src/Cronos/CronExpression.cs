@@ -1,34 +1,54 @@
-﻿using System;
+﻿// The MIT License(MIT)
+// 
+// Copyright (c) 2017 Sergey Odinokov
+// 
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace Cronos
 {
     /// <summary>
     /// Provides a parser and scheduler for cron expressions.
     /// </summary>
-    public sealed class CronExpression
+    public sealed class CronExpression: IEquatable<CronExpression>
     {
-        private const int MinDaysInMonth = 28;
+        private const long NotFound = 0;
+
         private const int MinNthDayOfWeek = 1;
         private const int MaxNthDayOfWeek = 5;
         private const int SundayBits = 0b1000_0001;
 
-        // All possible last days of month: the 28th, the 29th, the 30th, the 31th.
-        private const int LastDaysOfMonths = 0b1111 << MinDaysInMonth;
+        private const int MaxYear = 2099;
 
-        private const int MaxDay = 1;
-        private const int MaxMonth = 1;
-        private const int MaxYear = 2100;
-
-        private static readonly DateTime MaxDateTime = new DateTime(MaxYear, MaxMonth, MaxDay);
         private static readonly TimeZoneInfo UtcTimeZone = TimeZoneInfo.Utc;
 
-        private static readonly CronExpression Yearly = Parse("0 0 1 1 * ");
-        private static readonly CronExpression Weekly = Parse("0 0 * * 0 ");
-        private static readonly CronExpression Monthly = Parse("0 0 1 * * ");
-        private static readonly CronExpression Daily = Parse("0 0 * * * ");
-        private static readonly CronExpression Hourly = Parse("0 * * * * ");
-        private static readonly CronExpression Minutely = Parse("* * * * * ");
+        private static readonly CronExpression Yearly = Parse("0 0 1 1 *");
+        private static readonly CronExpression Weekly = Parse("0 0 * * 0");
+        private static readonly CronExpression Monthly = Parse("0 0 1 * *");
+        private static readonly CronExpression Daily = Parse("0 0 * * *");
+        private static readonly CronExpression Hourly = Parse("0 * * * *");
+        private static readonly CronExpression Minutely = Parse("* * * * *");
         private static readonly CronExpression Secondly = Parse("* * * * * *", CronFormat.IncludeSeconds);
 
         private static readonly int[] DeBruijnPositions =
@@ -43,17 +63,15 @@ namespace Cronos
             50, 31, 19, 15, 30, 14, 13, 12
         };
 
-        internal TimeZoneInfo TestLocalZone;
+        private long  _second;     // 60 bits -> from 0 bit to 59 bit
+        private long  _minute;     // 60 bits -> from 0 bit to 59 bit
+        private int   _hour;       // 24 bits -> from 0 bit to 23 bit
+        private int   _dayOfMonth; // 31 bits -> from 1 bit to 31 bit
+        private short _month;      // 12 bits -> from 1 bit to 12 bit
+        private byte  _dayOfWeek;  // 8 bits  -> from 0 bit to 7 bit
 
-        private long _second;     // 60 bits -> from 0 bit to 59 bit in Int64
-        private long _minute;     // 60 bits -> from 0 bit to 59 bit in Int64
-        private long _hour;       // 24 bits -> from 0 bit to 23 bit in Int64
-        private long _dayOfMonth; // 31 bits -> from 1 bit to 31 bit in Int64
-        private long _month;      // 12 bits -> from 1 bit to 12 bit in Int64
-        private long _dayOfWeek;  // 8 bits  -> from 0 bit to 7  bit in Int64
-
-        private int _nthdayOfWeek;
-        private int _lastMonthOffset;
+        private byte  _nthDayOfWeek;
+        private byte  _lastMonthOffset;
 
         private CronExpressionFlag _flags;
 
@@ -65,7 +83,7 @@ namespace Cronos
         /// Constructs a new <see cref="CronExpression"/> based on the specified
         /// cron expression. It's supported expressions consisting of 5 fields:
         /// minute, hour, day of month, month, day of week. 
-        /// If you want to parse non-standard cron expresions use <see cref="Parse(string, CronFormat)"/> with specified CronFields argument.
+        /// If you want to parse non-standard cron expressions use <see cref="Parse(string, CronFormat)"/> with specified CronFields argument.
         /// See more: <a href="https://github.com/HangfireIO/Cronos">https://github.com/HangfireIO/Cronos</a>
         /// </summary>
         public static CronExpression Parse(string expression)
@@ -79,95 +97,103 @@ namespace Cronos
         /// second (optional), minute, hour, day of month, month, day of week. 
         /// See more: <a href="https://github.com/HangfireIO/Cronos">https://github.com/HangfireIO/Cronos</a>
         /// </summary>
-        public static CronExpression Parse(string expression, CronFormat format)
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        public static unsafe CronExpression Parse(string expression, CronFormat format)
         {
             if (string.IsNullOrEmpty(expression)) throw new ArgumentNullException(nameof(expression));
 
-            unsafe
+            fixed (char* value = expression)
             {
-                fixed (char* value = expression)
-                {
-                    var pointer = value;
+                var pointer = value;
 
+                SkipWhiteSpaces(ref pointer);
+
+                CronExpression cronExpression;
+
+                if (Accept(ref pointer, '@'))
+                {
+                    cronExpression = ParseMacro(ref pointer);
                     SkipWhiteSpaces(ref pointer);
 
-                    if (*pointer == '@')
-                    {
-                        var macroExpression = ParseMacro(ref pointer);
-                        if (macroExpression == null) ThrowFormatException("Unexpected character '{0}' on position {1}.", *pointer, pointer - value);
-
-                        pointer++;
-
-                        SkipWhiteSpaces(ref pointer);
-
-                        if (!IsEndOfString(*pointer)) ThrowFormatException("Unexpected character '{0}' on position {1}, end of string expected.", *pointer, pointer - value);
-
-                        return macroExpression;
-                    }
-
-                    var cronExpression = new CronExpression();
-
-                    if ((format & CronFormat.IncludeSeconds) != 0)
-                    {
-                        ParseField(CronField.Seconds, ref pointer, cronExpression, ref cronExpression._second);
-                    }
-                    else
-                    {
-                        SetBit(ref cronExpression._second, 0);
-                    }
-
-                    ParseField(CronField.Minutes, ref pointer, cronExpression, ref cronExpression._minute);
-
-                    ParseField(CronField.Hours, ref pointer, cronExpression, ref cronExpression._hour);
-
-                    ParseField(CronField.DaysOfMonth, ref pointer, cronExpression, ref cronExpression._dayOfMonth);
-
-                    ParseField(CronField.Months, ref pointer, cronExpression, ref cronExpression._month);
-
-                    if (*pointer == '?' && cronExpression.HasFlag(CronExpressionFlag.DayOfMonthQuestion))
-                    {
-                        ThrowFormatException(CronField.DaysOfWeek, "'?' is not supported.");
-                    }
-
-                    ParseField(CronField.DaysOfWeek, ref pointer, cronExpression, ref cronExpression._dayOfWeek);
-
-                    if (!IsEndOfString(*pointer))
-                    {
-                        ThrowFormatException("Unexpected character '{0}' on position {1}, end of string expected. Please use the '{2}' argument to specify non-standard CRON fields.", *pointer, pointer - value, nameof(format));
-                    }
-                    
-                    // Make sundays equivalent.
-                    if ((cronExpression._dayOfWeek & SundayBits) != 0)
-                    {
-                        cronExpression._dayOfWeek |= SundayBits;
-                    }
+                    if (cronExpression == null || !IsEndOfString(*pointer)) ThrowFormatException("Macro: Unexpected character '{0}' on position {1}.", *pointer, pointer - value);
 
                     return cronExpression;
                 }
+
+                cronExpression = new CronExpression();
+
+                if (format == CronFormat.IncludeSeconds)
+                {
+                    cronExpression._second = ParseField(CronField.Seconds, ref pointer, ref cronExpression._flags);
+                    ParseWhiteSpace(CronField.Seconds, ref pointer);
+                }
+                else
+                {
+                    SetBit(ref cronExpression._second, CronField.Seconds.First);
+                }
+
+                cronExpression._minute = ParseField(CronField.Minutes, ref pointer, ref cronExpression._flags);
+                ParseWhiteSpace(CronField.Minutes, ref pointer);
+
+                cronExpression._hour = (int)ParseField(CronField.Hours, ref pointer, ref cronExpression._flags);
+                ParseWhiteSpace(CronField.Hours, ref pointer);
+
+                cronExpression._dayOfMonth = (int)ParseDayOfMonth(ref pointer, ref cronExpression._flags, ref cronExpression._lastMonthOffset);
+                ParseWhiteSpace(CronField.DaysOfMonth, ref pointer);
+
+                cronExpression._month = (short)ParseField(CronField.Months, ref pointer, ref cronExpression._flags);
+                ParseWhiteSpace(CronField.Months, ref pointer);
+
+                cronExpression._dayOfWeek = (byte)ParseDayOfWeek(ref pointer, ref cronExpression._flags, ref cronExpression._nthDayOfWeek);
+                ParseEndOfString(ref pointer);
+
+                // Make sundays equivalent.
+                if ((cronExpression._dayOfWeek & SundayBits) != 0)
+                {
+                    cronExpression._dayOfWeek |= SundayBits;
+                }
+
+                return cronExpression;
             }
         }
 
         /// <summary>
-        /// Calculates next occurrence starting with <paramref name="from"/> (optionally <paramref name="inclusive"/>).
+        /// Calculates next occurrence starting with <paramref name="fromUtc"/> (optionally <paramref name="inclusive"/>) in UTC time zone.
         /// </summary>
-        public DateTime? GetNextOccurrence(DateTime from, bool inclusive = false)
+        public DateTime? GetNextOccurrence(DateTime fromUtc, bool inclusive = false)
         {
-            if (from.Kind == DateTimeKind.Unspecified) ThrowDateTimeKindIsUnspecifiedException(nameof(from));
+            if (fromUtc.Kind != DateTimeKind.Utc) ThrowWrongDateTimeKindException(nameof(fromUtc));
 
-            if (from.Kind == DateTimeKind.Local)
+            var found = FindOccurence(fromUtc.Ticks, inclusive);
+            if (found == NotFound) return null;
+
+            return new DateTime(found, DateTimeKind.Utc);
+        }
+
+        /// <summary>
+        /// Returns the list of next occurrences within the given date/time range,
+        /// including <paramref name="fromUtc"/> and excluding <paramref name="toUtc"/>
+        /// by default, and UTC time zone. When none of the occurrences found, an 
+        /// empty list is returned.
+        /// </summary>
+        public IEnumerable<DateTime> GetOccurrences(
+            DateTime fromUtc,
+            DateTime toUtc,
+            bool fromInclusive = true,
+            bool toInclusive = false)
+        {
+            if (fromUtc > toUtc) ThrowFromShouldBeLessThanToException(nameof(fromUtc), nameof(toUtc));
+
+            for (var occurrence = GetNextOccurrence(fromUtc, fromInclusive);
+                occurrence < toUtc || occurrence == toUtc && toInclusive;
+                // ReSharper disable once RedundantArgumentDefaultValue
+                // ReSharper disable once ArgumentsStyleLiteral
+                occurrence = GetNextOccurrence(occurrence.Value, inclusive: false))
             {
-                var localZone = GetLocalTimeZone();
-
-                var localOccurrence = GetOccurenceByZonedTimes(from, localZone, inclusive);
-                if (localOccurrence == null) return null;
-
-                return DateTime.SpecifyKind(localOccurrence.Value.DateTime, DateTimeKind.Local);
+                yield return occurrence.Value;
             }
-
-            var found = FindOccurence(from, MaxDateTime, inclusive);
-            if (found == null) return null;
-
-            return DateTime.SpecifyKind(found.Value, DateTimeKind.Utc);
         }
 
         /// <summary>
@@ -177,18 +203,42 @@ namespace Cronos
         {
             if (fromUtc.Kind != DateTimeKind.Utc) ThrowWrongDateTimeKindException(nameof(fromUtc));
 
-            if (zone == UtcTimeZone)
+            if (ReferenceEquals(zone, UtcTimeZone))
             {
-                var found = FindOccurence(fromUtc, MaxDateTime, inclusive);
-                if (found == null) return null;
+                var found = FindOccurence(fromUtc.Ticks, inclusive);
+                if (found == NotFound) return null;
 
-                return DateTime.SpecifyKind(found.Value, DateTimeKind.Utc);
+                return new DateTime(found, DateTimeKind.Utc);
             }
 
             var zonedStart = TimeZoneInfo.ConvertTime(fromUtc, zone);
-
-            var occurrence = GetOccurenceByZonedTimes(zonedStart, zone, inclusive);
+            var zonedStartOffset = new DateTimeOffset(zonedStart, zonedStart - fromUtc);
+            var occurrence = GetOccurenceByZonedTimes(zonedStartOffset, zone, inclusive);
             return occurrence?.UtcDateTime;
+        }
+
+        /// <summary>
+        /// Returns the list of next occurrences within the given date/time range, including
+        /// <paramref name="fromUtc"/> and excluding <paramref name="toUtc"/> by default, and 
+        /// specified time zone. When none of the occurrences found, an empty list is returned.
+        /// </summary>
+        public IEnumerable<DateTime> GetOccurrences(
+            DateTime fromUtc,
+            DateTime toUtc,
+            TimeZoneInfo zone,
+            bool fromInclusive = true,
+            bool toInclusive = false)
+        {
+            if (fromUtc > toUtc) ThrowFromShouldBeLessThanToException(nameof(fromUtc), nameof(toUtc));
+
+            for (var occurrence = GetNextOccurrence(fromUtc, zone, fromInclusive);
+                occurrence < toUtc || occurrence == toUtc && toInclusive;
+                // ReSharper disable once RedundantArgumentDefaultValue
+                // ReSharper disable once ArgumentsStyleLiteral
+                occurrence = GetNextOccurrence(occurrence.Value, zone, inclusive: false))
+            {
+                yield return occurrence.Value;
+            }
         }
 
         /// <summary>
@@ -196,97 +246,195 @@ namespace Cronos
         /// </summary>
         public DateTimeOffset? GetNextOccurrence(DateTimeOffset from, TimeZoneInfo zone, bool inclusive = false)
         {
-            if (zone == UtcTimeZone)
+            if (ReferenceEquals(zone, UtcTimeZone))
             {
-                var found = FindOccurence(from.UtcDateTime, MaxDateTime, inclusive);
-                if (found == null) return null;
+                var found = FindOccurence(from.UtcTicks, inclusive);
+                if (found == NotFound) return null;
 
-                return new DateTimeOffset(found.Value, TimeSpan.Zero);
+                return new DateTimeOffset(found, TimeSpan.Zero);
             }
 
             var zonedStart = TimeZoneInfo.ConvertTime(from, zone);
-
             return GetOccurenceByZonedTimes(zonedStart, zone, inclusive);
         }
 
-        private DateTimeOffset? GetOccurenceByZonedTimes(DateTimeOffset zonedStartInclusive, TimeZoneInfo zone, bool inclusive)
+        /// <summary>
+        /// Returns the list of occurrences within the given date/time offset range,
+        /// including <paramref name="from"/> and excluding <paramref name="to"/> by
+        /// default. When none of the occurrences found, an empty list is returned.
+        /// </summary>
+        public IEnumerable<DateTimeOffset> GetOccurrences(
+            DateTimeOffset from,
+            DateTimeOffset to,
+            TimeZoneInfo zone,
+            bool fromInclusive = true,
+            bool toInclusive = false)
         {
-            var startLocalDateTime = zonedStartInclusive.DateTime;
+            if (from > to) ThrowFromShouldBeLessThanToException(nameof(from), nameof(to));
 
-            if (TimeZoneHelper.IsAmbiguousTime(zone, startLocalDateTime))
+            for (var occurrence = GetNextOccurrence(from, zone, fromInclusive);
+                occurrence < to || occurrence == to && toInclusive;
+                // ReSharper disable once RedundantArgumentDefaultValue
+                // ReSharper disable once ArgumentsStyleLiteral
+                occurrence = GetNextOccurrence(occurrence.Value, zone, inclusive: false))
             {
-                var currentOffset = zonedStartInclusive.Offset;
-                var lateOffset = zone.BaseUtcOffset;
+                yield return occurrence.Value;
+            }
+        }
+
+        /// <inheritdoc />
+        public override string ToString()
+        {
+            var expressionBuilder = new StringBuilder();
+            
+            AppendFieldValue(expressionBuilder, CronField.Seconds, _second).Append(' ');
+            AppendFieldValue(expressionBuilder, CronField.Minutes, _minute).Append(' ');
+            AppendFieldValue(expressionBuilder, CronField.Hours, _hour).Append(' ');
+            AppendDayOfMonth(expressionBuilder, _dayOfMonth).Append(' ');
+            AppendFieldValue(expressionBuilder, CronField.Months, _month).Append(' ');
+            AppendDayOfWeek(expressionBuilder, _dayOfWeek);
+
+            return expressionBuilder.ToString();
+        }
+
+        /// <summary>
+        /// Determines whether the specified <see cref="Object"/> is equal to the current <see cref="Object"/>.
+        /// </summary>
+        /// <param name="other">The <see cref="Object"/> to compare with the current <see cref="Object"/>.</param>
+        /// <returns>
+        /// <c>true</c> if the specified <see cref="Object"/> is equal to the current <see cref="Object"/>; otherwise, <c>false</c>.
+        /// </returns>
+        public bool Equals(CronExpression other)
+        {
+            if (other == null) return false;
+
+            return _second == other._second &&
+                   _minute == other._minute &&
+                   _hour == other._hour &&
+                   _dayOfMonth == other._dayOfMonth &&
+                   _month == other._month &&
+                   _dayOfWeek == other._dayOfWeek &&
+                   _nthDayOfWeek == other._nthDayOfWeek &&
+                   _lastMonthOffset == other._lastMonthOffset &&
+                   _flags == other._flags;
+        }
+
+        /// <summary>
+        /// Determines whether the specified <see cref="System.Object" /> is equal to this instance.
+        /// </summary>
+        /// <param name="obj">The <see cref="System.Object" /> to compare with this instance.</param>
+        /// <returns>
+        /// <c>true</c> if the specified <see cref="System.Object" /> is equal to this instance;
+        /// otherwise, <c>false</c>.
+        /// </returns>
+        public override bool Equals(object obj) => Equals(obj as CronExpression);
+
+        /// <summary>
+        /// Returns a hash code for this instance.
+        /// </summary>
+        /// <returns>
+        /// A hash code for this instance, suitable for use in hashing algorithms and data
+        /// structures like a hash table. 
+        /// </returns>
+        [SuppressMessage("ReSharper", "NonReadonlyMemberInGetHashCode")]
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                var hashCode = _second.GetHashCode();
+                hashCode = (hashCode * 397) ^ _minute.GetHashCode();
+                hashCode = (hashCode * 397) ^ _hour;
+                hashCode = (hashCode * 397) ^ _dayOfMonth;
+                hashCode = (hashCode * 397) ^ _month.GetHashCode();
+                hashCode = (hashCode * 397) ^ _dayOfWeek.GetHashCode();
+                hashCode = (hashCode * 397) ^ _nthDayOfWeek.GetHashCode();
+                hashCode = (hashCode * 397) ^ _lastMonthOffset.GetHashCode();
+                hashCode = (hashCode * 397) ^ (int)_flags;
+
+                return hashCode;
+            }
+        }
+
+        /// <summary>
+        /// Implements the operator ==.
+        /// </summary>
+        public static bool operator ==(CronExpression left, CronExpression right) => Equals(left, right);
+
+        /// <summary>
+        /// Implements the operator !=.
+        /// </summary>
+        public static bool operator !=(CronExpression left, CronExpression right) => !Equals(left, right);
+
+
+        private DateTimeOffset? GetOccurenceByZonedTimes(DateTimeOffset from, TimeZoneInfo zone, bool inclusive)
+        {
+            var fromLocal = from.DateTime;
+
+            if (TimeZoneHelper.IsAmbiguousTime(zone, fromLocal))
+            {
+                var currentOffset = from.Offset;
+                var standardOffset = zone.BaseUtcOffset;
                
-                if (lateOffset != currentOffset)
+                if (standardOffset != currentOffset)
                 {
-                    var earlyOffset = TimeZoneHelper.GetDstOffset(startLocalDateTime, zone);
-                    var earlyIntervalLocalEnd = TimeZoneHelper.GetDstEnd(zone, startLocalDateTime, earlyOffset);
+                    var daylightOffset = TimeZoneHelper.GetDaylightOffset(zone, fromLocal);
+                    var daylightTimeLocalEnd = TimeZoneHelper.GetDaylightTimeEnd(zone, fromLocal, daylightOffset).DateTime;
 
                     // Early period, try to find anything here.
-                    var found = FindOccurence(startLocalDateTime, earlyIntervalLocalEnd.DateTime, inclusive);
-                    if (found.HasValue) return new DateTimeOffset(found.Value, earlyOffset);
+                    var foundInDaylightOffset = FindOccurence(fromLocal.Ticks, daylightTimeLocalEnd.Ticks, inclusive);
+                    if (foundInDaylightOffset != NotFound) return new DateTimeOffset(foundInDaylightOffset, daylightOffset);
 
-                    startLocalDateTime = TimeZoneHelper.GetStandartTimeStart(zone, startLocalDateTime, earlyOffset).DateTime;
+                    fromLocal = TimeZoneHelper.GetStandardTimeStart(zone, fromLocal, daylightOffset).DateTime;
                     inclusive = true;
                 }
 
                 // Skip late ambiguous interval.
-                var ambiguousTimeEnd = TimeZoneHelper.GetAmbiguousTimeEnd(zone, startLocalDateTime);
+                var ambiguousIntervalLocalEnd = TimeZoneHelper.GetAmbiguousIntervalEnd(zone, fromLocal).DateTime;
 
-                var abmiguousTimeLastInstant = ambiguousTimeEnd.DateTime.AddTicks(-1);
+                if (HasFlag(CronExpressionFlag.Interval))
+                {
+                    var foundInStandardOffset = FindOccurence(fromLocal.Ticks, ambiguousIntervalLocalEnd.Ticks - 1, inclusive);
+                    if (foundInStandardOffset != NotFound) return new DateTimeOffset(foundInStandardOffset, standardOffset);
+                }
 
-                var foundInLateInterval = FindOccurence(startLocalDateTime, abmiguousTimeLastInstant, inclusive);
-
-                if (foundInLateInterval.HasValue && HasFlag(CronExpressionFlag.Interval))
-                    return new DateTimeOffset(foundInLateInterval.Value, lateOffset);
-
-                startLocalDateTime = ambiguousTimeEnd.DateTime;
+                fromLocal = ambiguousIntervalLocalEnd;
+                inclusive = true;
             }
 
-            var occurrence = FindOccurence(startLocalDateTime, MaxDateTime, inclusive);
-            if (occurrence == null) return null;
+            var occurrenceTicks = FindOccurence(fromLocal.Ticks, inclusive);
+            if (occurrenceTicks == NotFound) return null;
 
-            if (zone.IsInvalidTime(occurrence.Value))
+            var occurrence = new DateTime(occurrenceTicks);
+
+            if (zone.IsInvalidTime(occurrence))
             {
-                var nextValidTime = TimeZoneHelper.GetDstStart(zone, occurrence.Value, zone.BaseUtcOffset);
+                var nextValidTime = TimeZoneHelper.GetDaylightTimeStart(zone, occurrence);
                 return nextValidTime;
             }
 
-            if (TimeZoneHelper.IsAmbiguousTime(zone, occurrence.Value))
+            if (TimeZoneHelper.IsAmbiguousTime(zone, occurrence))
             {
-                var earlyOffset = TimeZoneHelper.GetDstOffset(occurrence.Value, zone);
-                return new DateTimeOffset(occurrence.Value, earlyOffset);
+                var daylightOffset = TimeZoneHelper.GetDaylightOffset(zone, occurrence);
+                return new DateTimeOffset(occurrence, daylightOffset);
             }
 
-            return new DateTimeOffset(occurrence.Value, zone.GetUtcOffset(occurrence.Value));
+            return new DateTimeOffset(occurrence, zone.GetUtcOffset(occurrence));
         }
 
-        private DateTime? FindOccurence(DateTime startTime, DateTime endTime, bool startInclusive)
+        private long FindOccurence(long startTimeTicks, long endTimeTicks, bool startInclusive)
         {
-            if (!startInclusive) startTime = CalendarHelper.AddMillisecond(startTime);
+            var found = FindOccurence(startTimeTicks, startInclusive);
 
-            var endSecond = 0;
-            var endMinute = 0;
-            var endHour = 0;
-            var endDay = MaxDay;
-            var endMonth = MaxMonth;
-            var endYear = MaxYear;
+            if (found == NotFound || found > endTimeTicks) return NotFound;
+            return found;
+        }
 
-            if (endTime < MaxDateTime)
-            {
-                CalendarHelper.FillDateTimeParts(
-                    endTime,
-                    out endSecond,
-                    out endMinute,
-                    out endHour,
-                    out endDay,
-                    out endMonth,
-                    out endYear);
-            }
+        private long FindOccurence(long ticks, bool startInclusive)
+        {
+            if (!startInclusive) ticks++;
 
             CalendarHelper.FillDateTimeParts(
-                startTime,
+                ticks,
                 out int startSecond,
                 out int startMinute,
                 out int startHour,
@@ -294,252 +442,105 @@ namespace Cronos
                 out int startMonth,
                 out int startYear);
 
-            var year = startYear;
-            var month = startMonth;
-            var day = startDay;
-            var hour = startHour;
-            var minute = startMinute;
+            var minMatchedDay = GetFirstSet(_dayOfMonth);
+
             var second = startSecond;
+            var minute = startMinute;
+            var hour = startHour;
+            var day = startDay;
+            var month = startMonth;
+            var year = startYear;
 
-            var minSecond = FindFirstSet(_second, CronField.Seconds.First, CronField.Seconds.Last);
-            var minMinute = FindFirstSet(_minute, CronField.Minutes.First, CronField.Minutes.Last);
-            var minHour = FindFirstSet(_hour, CronField.Hours.First, CronField.Hours.Last);
-            var minDay = FindFirstSet(_dayOfMonth, CronField.DaysOfMonth.First, CronField.DaysOfMonth.Last);
-            var minMonth = FindFirstSet(_month, CronField.Months.First, CronField.Months.Last);
+            if (!GetBit(_second, second) && !Move(_second, ref second)) minute++;
+            if (!GetBit(_minute, minute) && !Move(_minute, ref minute)) hour++;
+            if (!GetBit(_hour, hour) && !Move(_hour, ref hour)) day++;
 
-            void Rollover(CronField field, bool increment = true)
+            // If NearestWeekday flag is set it's possible forward shift.
+            if (HasFlag(CronExpressionFlag.NearestWeekday)) day = CronField.DaysOfMonth.First;
+
+            if (!GetBit(_dayOfMonth, day) && !Move(_dayOfMonth, ref day)) goto RetryMonth;
+            if (!GetBit(_month, month)) goto RetryMonth;
+
+            Retry:
+
+            if (day > GetLastDayOfMonth(year, month)) goto RetryMonth;
+
+            if (HasFlag(CronExpressionFlag.DayOfMonthLast)) day = GetLastDayOfMonth(year, month);
+
+            var lastCheckedDay = day;
+
+            if (HasFlag(CronExpressionFlag.NearestWeekday)) day = CalendarHelper.MoveToNearestWeekDay(year, month, day);
+
+            if (IsDayOfWeekMatch(year, month, day))
             {
-                if (field == CronField.Seconds)
-                {
-                    second = minSecond;
-                    if (increment) minute++;
-                }
-                else if (field == CronField.Minutes)
-                {
-                    second = minSecond;
-                    minute = minMinute;
-                    if (increment) hour++;
-                }
-                else if (field == CronField.Hours)
-                {
-                    second = minSecond;
-                    minute = minMinute;
-                    hour = minHour;
-                    if (increment) day++;
-                }
-                else if (field == CronField.DaysOfMonth)
-                {
-                    second = minSecond;
-                    minute = minMinute;
-                    hour = minHour;
-                    day = minDay;
-                    if (increment) month++;
-                }
-                else if (field == CronField.Months)
-                {
-                    second = minSecond;
-                    minute = minMinute;
-                    hour = minHour;
-                    day = minDay;
-                    month = minMonth;
-                    if (increment) year++;
-                }
+                if (CalendarHelper.IsGreaterThan(year, month, day, startYear, startMonth, startDay)) goto RolloverDay;
+                if (hour > startHour) goto RolloverHour;
+                if (minute > startMinute) goto RolloverMinute;
+                goto ReturnResult;
+
+                RolloverDay: hour = GetFirstSet(_hour);
+                RolloverHour: minute = GetFirstSet(_minute);
+                RolloverMinute: second = GetFirstSet(_second);
+
+                ReturnResult:
+
+                var found = CalendarHelper.DateTimeToTicks(year, month, day, hour, minute, second);
+                if (found >= ticks) return found;
             }
 
-            void MoveToNextValue(CronField field, long fieldBits, ref int value)
-            {
-                var nextValue = FindFirstSet(fieldBits, value, field.Last);
-                if (nextValue == value) return;
-
-                if (nextValue == -1)
-                {
-                    Rollover(field);
-                    return;
-                }
-
-                Rollover(field.Previous, false);
-                value = nextValue;
-            }
-
-            bool IsBeyondEndDate()
-            {
-                return CalendarHelper.IsLessThan(
-                    endYear, endMonth, endDay, endHour, endMinute, endSecond, 
-                    year, month, day, hour, minute, second);
-            }
-
-            if (HasFlag(CronExpressionFlag.NearestWeekday))
-            {
-                // If start day is Sunday or Saturday we must search from saturday 00:00 am.
-                // Next occurrence can be before startTime but not week day.
-                // So we'll shift occurrence to Monday and result will be after startTime.
-                if (startDay >= minDay && startDay <= minDay + 2)
-                {
-                    var dayOfWeek = CalendarHelper.GetDayOfWeek(startYear, startMonth, minDay);
-
-                    if (dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday)
-                    {
-                        day = minDay;
-                        Rollover(CronField.Hours, false);
-                    }
-                }
-            }
-
-            MoveToNextValue(CronField.Seconds, _second, ref second);
-            MoveToNextValue(CronField.Minutes, _minute, ref minute);
-            MoveToNextValue(CronField.Hours, _hour, ref hour);
-
-            RetryDayOfMonth:
-
-            MoveToNextValue(CronField.DaysOfMonth, _dayOfMonth, ref day);
+            day = lastCheckedDay;
+            if (Move(_dayOfMonth, ref day)) goto Retry;
 
             RetryMonth:
 
-            MoveToNextValue(CronField.Months, _month, ref month);
+            if (!Move(_month, ref month) && ++year >= MaxYear) return NotFound;
+            day = minMatchedDay;
 
-            var lastDayOfMonth = CalendarHelper.GetDaysInMonth(year, month);
-
-            if (day > lastDayOfMonth)
-            {
-                day = lastDayOfMonth;
-
-                if (IsBeyondEndDate()) return null;
-
-                Rollover(CronField.DaysOfMonth);
-                goto RetryDayOfMonth;
-            }
-
-            if (HasFlag(CronExpressionFlag.DayOfMonthLast))
-            {
-                var lastDayMonthWithOffset = lastDayOfMonth - _lastMonthOffset;
-
-                if (lastDayMonthWithOffset > day)
-                {
-                    Rollover(CronField.Hours, false);
-                    day = lastDayMonthWithOffset;
-                }
-                else if (lastDayMonthWithOffset < day)
-                {
-                    if (IsBeyondEndDate()) return null;
-
-                    Rollover(CronField.DaysOfMonth);
-                    goto RetryMonth;
-                }
-
-                if (!IsDayOfWeekMatch(year, month, day))
-                {
-                    if (IsBeyondEndDate()) return null;
-
-                    Rollover(CronField.Hours);
-                    goto RetryDayOfMonth;
-                }
-            }
-
-            // W character.
-
-            if (HasFlag(CronExpressionFlag.NearestWeekday))
-            {
-                var dayOfWeek = CalendarHelper.GetDayOfWeek(year, month, day);
-                var shift = CalendarHelper.MoveToNearestWeekDay(ref day, ref dayOfWeek, lastDayOfMonth);
-
-                if (shift > 0)
-                {
-                    Rollover(CronField.Hours, false);
-                }
-                else if (shift < 0)
-                {
-                    if (CalendarHelper.IsLessThan(year, month, day, 0, 0, 0, startYear, startMonth, startDay, 0, 0, 0))
-                    {
-                        Rollover(CronField.DaysOfMonth);
-                        goto RetryMonth;
-                    }
-                }
-
-                if (year == startYear && month == startMonth && day == startDay)
-                {
-                    hour = startHour;
-                    minute = startMinute;
-                    second = startSecond;
-
-                    MoveToNextValue(CronField.Seconds, _second, ref second);
-                    MoveToNextValue(CronField.Minutes, _minute, ref minute);
-                    MoveToNextValue(CronField.Hours, _hour, ref hour);
-
-                    if (day == -1 || day != startDay)
-                    {
-                        Rollover(CronField.DaysOfMonth);
-                        goto RetryMonth;
-                    }
-                }
-
-                if (IsBeyondEndDate()) return null;
-
-                if (!IsDayOfWeekMatch(dayOfWeek) ||
-                    HasFlag(CronExpressionFlag.DayOfWeekLast) && !CalendarHelper.IsLastDayOfWeek(day, lastDayOfMonth) ||
-                    HasFlag(CronExpressionFlag.NthDayOfWeek) && !CalendarHelper.IsNthDayOfWeek(day, _nthdayOfWeek))
-                {
-                    Rollover(CronField.DaysOfMonth);
-                    goto RetryMonth;
-                }
-            }
-
-            if (IsBeyondEndDate()) return null;
-
-            // L and # characters in day of week.
-
-            if (!IsDayOfWeekMatch(year, month, day) ||
-                HasFlag(CronExpressionFlag.DayOfWeekLast) && !CalendarHelper.IsLastDayOfWeek(day, lastDayOfMonth) ||
-                HasFlag(CronExpressionFlag.NthDayOfWeek) && !CalendarHelper.IsNthDayOfWeek(day, _nthdayOfWeek))
-            {
-                Rollover(CronField.Hours);
-                goto RetryDayOfMonth;
-            }
-
-            return new DateTime(CalendarHelper.DateTimeToTicks(year, month, day, hour, minute, second));
+            goto Retry;
         }
 
-#if !NET40
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#endif
+        private static bool Move(long fieldBits, ref int fieldValue)
+        {
+            if (fieldBits >> ++fieldValue == 0)
+            {
+                fieldValue = GetFirstSet(fieldBits);
+                return false;
+            }
+
+            fieldValue += GetFirstSet(fieldBits >> fieldValue);
+            return true;
+        }
+
+        private int GetLastDayOfMonth(int year, int month)
+        {
+            return CalendarHelper.GetDaysInMonth(year, month) - _lastMonthOffset;
+        }
+
         private bool IsDayOfWeekMatch(int year, int month, int day)
         {
-            if (_dayOfWeek == -1L) return true;
+            if (HasFlag(CronExpressionFlag.DayOfWeekLast) && !CalendarHelper.IsLastDayOfWeek(year, month, day) ||
+                HasFlag(CronExpressionFlag.NthDayOfWeek) && !CalendarHelper.IsNthDayOfWeek(day, _nthDayOfWeek))
+            {
+                return false;
+            }
+
+            if (_dayOfWeek == CronField.DaysOfWeek.AllBits) return true;
 
             var dayOfWeek = CalendarHelper.GetDayOfWeek(year, month, day);
+
             return ((_dayOfWeek >> (int)dayOfWeek) & 1) != 0;
         }
 
 #if !NET40
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-        private bool IsDayOfWeekMatch(DayOfWeek dayOfWeek)
+        private static int GetFirstSet(long value)
         {
-            return ((_dayOfWeek >> (int)dayOfWeek) & 1) != 0;
-        }
-
-#if !NET40
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#endif
-        private static int FindFirstSet(long value, int startBit, int endBit)
-        {
-            if (startBit <= endBit && GetBit(value, startBit)) return startBit;
-
             // TODO: Add description and source
-
-            value = value >> startBit;
-            if (value == 0) return -1;
-
             ulong res = unchecked((ulong)(value & -value) * 0x022fdd63cc95386d) >> 58;
-
-            var result = DeBruijnPositions[res] + startBit;
-            if (result > endBit) return -1;
-
-            return result;
+            return DeBruijnPositions[res];
         }
 
-#if !NET40
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#endif
         private bool HasFlag(CronExpressionFlag value)
         {
             return (_flags & value) != 0;
@@ -548,415 +549,445 @@ namespace Cronos
 #if !NET40
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-        private TimeZoneInfo GetLocalTimeZone()
+        private static unsafe void SkipWhiteSpaces(ref char* pointer)
         {
-            return TestLocalZone ?? TimeZoneInfo.Local;
+            while (IsWhiteSpace(*pointer)) { pointer++; }
         }
 
 #if !NET40
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-        private static unsafe void SkipWhiteSpaces(ref char* pointer)
+        private static unsafe void ParseWhiteSpace(CronField prevField, ref char* pointer)
         {
-            while (IsWhiteSpace(*pointer)) pointer++; 
+            if (!IsWhiteSpace(*pointer)) ThrowFormatException(prevField, "Unexpected character '{0}'.", *pointer);
+            SkipWhiteSpaces(ref pointer);
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe void ParseEndOfString(ref char* pointer)
+        {
+            if (!IsWhiteSpace(*pointer) && !IsEndOfString(*pointer)) ThrowFormatException(CronField.DaysOfWeek, "Unexpected character '{0}'.", *pointer);
+
+            SkipWhiteSpaces(ref pointer);
+            if (!IsEndOfString(*pointer)) ThrowFormatException("Unexpected character '{0}'.", *pointer);
         }
 
         private static unsafe CronExpression ParseMacro(ref char* pointer)
         {
-            pointer++;
-
-            switch (ToUpper(*pointer))
+            switch (ToUpper(*pointer++))
             {
                 case 'A':
-                    if (ToUpper(*++pointer) == 'N' &&
-                        ToUpper(*++pointer) == 'N' &&
-                        ToUpper(*++pointer) == 'U' &&
-                        ToUpper(*++pointer) == 'A' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'Y')
+                    if (AcceptCharacter(ref pointer, 'N') &&
+                        AcceptCharacter(ref pointer, 'N') &&
+                        AcceptCharacter(ref pointer, 'U') &&
+                        AcceptCharacter(ref pointer, 'A') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'Y'))
                         return Yearly;
                     return null;
                 case 'D':
-                    if (ToUpper(*++pointer) == 'A' &&
-                        ToUpper(*++pointer) == 'I' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'Y')
+                    if (AcceptCharacter(ref pointer, 'A') &&
+                        AcceptCharacter(ref pointer, 'I') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'Y'))
                         return Daily;
                     return null;
                 case 'E':
-                    if (ToUpper(*++pointer) == 'V' &&
-                        ToUpper(*++pointer) == 'E' &&
-                        ToUpper(*++pointer) == 'R' &&
-                        ToUpper(*++pointer) == 'Y' &&
-                        ToUpper(*++pointer) == '_')
+                    if (AcceptCharacter(ref pointer, 'V') &&
+                        AcceptCharacter(ref pointer, 'E') &&
+                        AcceptCharacter(ref pointer, 'R') &&
+                        AcceptCharacter(ref pointer, 'Y') &&
+                        Accept(ref pointer, '_'))
                     {
-                        pointer++;
-                        if (ToUpper(*pointer) == 'M' &&
-                            ToUpper(*++pointer) == 'I' &&
-                            ToUpper(*++pointer) == 'N' &&
-                            ToUpper(*++pointer) == 'U' &&
-                            ToUpper(*++pointer) == 'T' &&
-                            ToUpper(*++pointer) == 'E')
+                        if (AcceptCharacter(ref pointer, 'M') &&
+                            AcceptCharacter(ref pointer, 'I') &&
+                            AcceptCharacter(ref pointer, 'N') &&
+                            AcceptCharacter(ref pointer, 'U') &&
+                            AcceptCharacter(ref pointer, 'T') &&
+                            AcceptCharacter(ref pointer, 'E'))
                             return Minutely;
 
                         if (*(pointer - 1) != '_') return null;
 
-                        if (*(pointer - 1) == '_' &&
-                            ToUpper(*pointer) == 'S' &&
-                            ToUpper(*++pointer) == 'E' &&
-                            ToUpper(*++pointer) == 'C' &&
-                            ToUpper(*++pointer) == 'O' &&
-                            ToUpper(*++pointer) == 'N' &&
-                            ToUpper(*++pointer) == 'D')
+                        if (AcceptCharacter(ref pointer, 'S') &&
+                            AcceptCharacter(ref pointer, 'E') &&
+                            AcceptCharacter(ref pointer, 'C') &&
+                            AcceptCharacter(ref pointer, 'O') &&
+                            AcceptCharacter(ref pointer, 'N') &&
+                            AcceptCharacter(ref pointer, 'D'))
                             return Secondly;
                     }
 
                     return null;
                 case 'H':
-                    if (ToUpper(*++pointer) == 'O' &&
-                        ToUpper(*++pointer) == 'U' &&
-                        ToUpper(*++pointer) == 'R' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'Y')
+                    if (AcceptCharacter(ref pointer, 'O') &&
+                        AcceptCharacter(ref pointer, 'U') &&
+                        AcceptCharacter(ref pointer, 'R') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'Y'))
                         return Hourly;
                     return null;
                 case 'M':
-                    pointer++;
-                    if (ToUpper(*pointer) == 'O' &&
-                        ToUpper(*++pointer) == 'N' &&
-                        ToUpper(*++pointer) == 'T' &&
-                        ToUpper(*++pointer) == 'H' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'Y')
+                    if (AcceptCharacter(ref pointer, 'O') &&
+                        AcceptCharacter(ref pointer, 'N') &&
+                        AcceptCharacter(ref pointer, 'T') &&
+                        AcceptCharacter(ref pointer, 'H') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'Y'))
                         return Monthly;
 
                     if (ToUpper(*(pointer - 1)) == 'M' &&
-                        ToUpper(*pointer) == 'I' &&
-                        ToUpper(*++pointer) == 'D' &&
-                        ToUpper(*++pointer) == 'N' &&
-                        ToUpper(*++pointer) == 'I' &&
-                        ToUpper(*++pointer) == 'G' &&
-                        ToUpper(*++pointer) == 'H' &&
-                        ToUpper(*++pointer) == 'T')
+                        AcceptCharacter(ref pointer, 'I') &&
+                        AcceptCharacter(ref pointer, 'D') &&
+                        AcceptCharacter(ref pointer, 'N') &&
+                        AcceptCharacter(ref pointer, 'I') &&
+                        AcceptCharacter(ref pointer, 'G') &&
+                        AcceptCharacter(ref pointer, 'H') &&
+                        AcceptCharacter(ref pointer, 'T'))
                         return Daily;
 
                     return null;
                 case 'W':
-                    if (ToUpper(*++pointer) == 'E' &&
-                        ToUpper(*++pointer) == 'E' &&
-                        ToUpper(*++pointer) == 'K' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'Y')
+                    if (AcceptCharacter(ref pointer, 'E') &&
+                        AcceptCharacter(ref pointer, 'E') &&
+                        AcceptCharacter(ref pointer, 'K') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'Y'))
                         return Weekly;
                     return null;
                 case 'Y':
-                    if (ToUpper(*++pointer) == 'E' &&
-                        ToUpper(*++pointer) == 'A' &&
-                        ToUpper(*++pointer) == 'R' &&
-                        ToUpper(*++pointer) == 'L' &&
-                        ToUpper(*++pointer) == 'Y')
+                    if (AcceptCharacter(ref pointer, 'E') &&
+                        AcceptCharacter(ref pointer, 'A') &&
+                        AcceptCharacter(ref pointer, 'R') &&
+                        AcceptCharacter(ref pointer, 'L') &&
+                        AcceptCharacter(ref pointer, 'Y'))
                         return Yearly;
                     return null;
                 default:
+                    pointer--;
                     return null;
             }
         }
 
-        private static unsafe void ParseField(
-            CronField field,
-            ref char* pointer, 
-            CronExpression expression, 
-            ref long bits)
+        private static unsafe long ParseField(CronField field, ref char* pointer, ref CronExpressionFlag flags)
         {
-            if (*pointer == '*')
+            if (Accept(ref pointer, '*') || Accept(ref pointer, '?'))
+            {
+                if (field.CanDefineInterval) flags |= CronExpressionFlag.Interval;
+                return ParseStar(field, ref pointer);
+            }
+
+            var num = ParseValue(field, ref pointer);
+
+            var bits = ParseRange(field, ref pointer, num, ref flags);
+            if (Accept(ref pointer, ',')) bits |= ParseList(field, ref pointer, ref flags);
+
+            return bits;
+        }
+
+        private static unsafe long ParseDayOfMonth(ref char* pointer, ref CronExpressionFlag flags, ref byte lastDayOffset)
+        {
+            var field = CronField.DaysOfMonth;
+
+            if (Accept(ref pointer, '*') || Accept(ref pointer, '?')) return ParseStar(field, ref pointer);
+
+            if (AcceptCharacter(ref pointer, 'L')) return ParseLastDayOfMonth(field, ref pointer, ref flags, ref lastDayOffset);
+
+            var dayOfMonth = ParseValue(field, ref pointer);
+
+            if (AcceptCharacter(ref pointer, 'W'))
+            {
+                flags |= CronExpressionFlag.NearestWeekday;
+                return GetBit(dayOfMonth);
+            }
+
+            var bits = ParseRange(field, ref pointer, dayOfMonth, ref flags);
+            if (Accept(ref pointer, ',')) bits |= ParseList(field, ref pointer, ref flags);
+
+            return bits;
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe long ParseDayOfWeek(ref char* pointer, ref CronExpressionFlag flags, ref byte nthWeekDay)
+        {
+            var field = CronField.DaysOfWeek;
+            if (Accept(ref pointer, '*') || Accept(ref pointer, '?')) return ParseStar(field, ref pointer);
+
+            var dayOfWeek = ParseValue(field, ref pointer);
+
+            if (AcceptCharacter(ref pointer, 'L')) return ParseLastWeekDay(dayOfWeek, ref flags);
+            if (Accept(ref pointer, '#')) return ParseNthWeekDay(field, ref pointer, dayOfWeek, ref flags, out nthWeekDay);
+
+            var bits = ParseRange(field, ref pointer, dayOfWeek, ref flags);
+            if (Accept(ref pointer, ',')) bits |= ParseList(field, ref pointer, ref flags);
+
+            return bits;
+        }
+
+#if !NET40
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe long ParseStar(CronField field, ref char* pointer)
+        {
+            return Accept(ref pointer, '/')
+                ? ParseStep(field, ref pointer, field.First, field.Last)
+                : field.AllBits;
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe long ParseList(CronField field, ref char* pointer, ref CronExpressionFlag flags)
+        {
+            var num = ParseValue(field, ref pointer);
+            var bits = ParseRange(field, ref pointer, num, ref flags);
+
+            do
+            {
+                if (!Accept(ref pointer, ',')) return bits;
+
+                bits |= ParseList(field, ref pointer, ref flags);
+            } while (true);
+        }
+
+        private static unsafe long ParseRange(CronField field, ref char* pointer, int low, ref CronExpressionFlag flags)
+        {
+            if (!Accept(ref pointer, '-'))
+            {
+                if (!Accept(ref pointer, '/')) return GetBit(low);
+
+                if (field.CanDefineInterval) flags |= CronExpressionFlag.Interval;
+                return ParseStep(field, ref pointer, low, field.Last);
+            }
+
+            if (field.CanDefineInterval) flags |= CronExpressionFlag.Interval;
+
+            var high = ParseValue(field, ref pointer);
+            if (Accept(ref pointer, '/')) return ParseStep(field, ref pointer, low, high);
+            return GetBits(field, low, high, 1);
+        }
+
+        private static unsafe long ParseStep(CronField field, ref char* pointer, int low, int high)
+        {
+            // Get the step size -- note: we don't pass the
+            // names here, because the number is not an
+            // element id, it's a step size.  'low' is
+            // sent as a 0 since there is no offset either.
+            var step = ParseNumber(field, ref pointer, 1, field.Last);
+            return GetBits(field, low, high, step);
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe long ParseLastDayOfMonth(CronField field, ref char* pointer, ref CronExpressionFlag flags, ref byte lastMonthOffset)
+        {
+            flags |= CronExpressionFlag.DayOfMonthLast;
+
+            if (Accept(ref pointer, '-')) lastMonthOffset = (byte)ParseNumber(field, ref pointer, 0, field.Last - 1);
+            if (AcceptCharacter(ref pointer, 'W')) flags |= CronExpressionFlag.NearestWeekday;
+            return field.AllBits;
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe long ParseNthWeekDay(CronField field, ref char* pointer, int dayOfWeek, ref CronExpressionFlag flags, out byte nthDayOfWeek)
+        {
+            nthDayOfWeek = (byte)ParseNumber(field, ref pointer, MinNthDayOfWeek, MaxNthDayOfWeek);
+            flags |= CronExpressionFlag.NthDayOfWeek;
+            return GetBit(dayOfWeek);
+        }
+
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static long ParseLastWeekDay(int dayOfWeek, ref CronExpressionFlag flags)
+        {
+            flags |= CronExpressionFlag.DayOfWeekLast;
+            return GetBit(dayOfWeek);
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe bool Accept(ref char* pointer, char character)
+        {
+            if (*pointer == character)
             {
                 pointer++;
+                return true;
+            }
 
-                if (field.CanDefineInterval) expression._flags |= CronExpressionFlag.Interval;
+            return false;
+        }
 
-                if (*pointer != '/')
-                {
-                    SetAllBits(out bits);
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe bool AcceptCharacter(ref char* pointer, char character)
+        {
+            if (ToUpper(*pointer) == character)
+            {
+                pointer++;
+                return true;
+            }
 
-                    if(!IsWhiteSpace(*pointer) && !IsEndOfString(*pointer)) ThrowFormatException(field, "'{0}' is not supported after '*'.", *pointer);
+            return false;
+        }
 
-                    SkipWhiteSpaces(ref pointer);
+        private static unsafe int ParseNumber(CronField field, ref char* pointer, int low, int high)
+        {
+            var num = GetNumber(ref pointer, null);
+            if (num == -1 || num < low || num > high)
+            {
+                ThrowFormatException(field, "Value must be a number between {0} and {1} (all inclusive).", low, high);
+            }
+            return num;
+        }
 
-                    return;
-                }
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static unsafe int ParseValue(CronField field, ref char* pointer)
+        {
+            var num = GetNumber(ref pointer, field.Names);
+            if (num == -1 || num < field.First || num > field.Last)
+            {
+                ThrowFormatException(field, "Value must be a number between {0} and {1} (all inclusive).", field.First, field.Last);
+            }
+            return num;
+        }
 
-                ParseRange(field, ref pointer, expression, ref bits, true);
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static StringBuilder AppendFieldValue(StringBuilder expressionBuilder, CronField field, long fieldValue)
+        {
+            if (field.AllBits == fieldValue) return expressionBuilder.Append('*');
+
+            // Unset 7 bit for Day of week field because both 0 and 7 stand for Sunday.
+            if (field == CronField.DaysOfWeek) fieldValue &= ~(1 << field.Last);
+
+            for (var i = GetFirstSet(fieldValue);; i = GetFirstSet(fieldValue >> i << i))
+            {
+                expressionBuilder.Append(i);
+                if (fieldValue >> ++i == 0) break;
+                expressionBuilder.Append(',');
+            }
+
+            return expressionBuilder;
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private StringBuilder AppendDayOfMonth(StringBuilder expressionBuilder, int domValue)
+        {
+            if (HasFlag(CronExpressionFlag.DayOfMonthLast))
+            {
+                expressionBuilder.Append('L');
+                if (_lastMonthOffset != 0) expressionBuilder.Append($"-{_lastMonthOffset}");
             }
             else
             {
-                ParseList(field, ref pointer, expression, ref bits);
+                AppendFieldValue(expressionBuilder, CronField.DaysOfMonth, (uint)domValue);
             }
 
-            if (field == CronField.DaysOfMonth)
-            {
-                if (*pointer == 'W')
-                {
-                    pointer++;
-                    expression._flags |= CronExpressionFlag.NearestWeekday;
-                }
-            }
-            else if (field == CronField.DaysOfWeek)
-            {
-                if (*pointer == 'L')
-                {
-                    pointer++;
-                    expression._flags |= CronExpressionFlag.DayOfWeekLast;
-                }
+            if (HasFlag(CronExpressionFlag.NearestWeekday)) expressionBuilder.Append('W');
 
-                if (*pointer == '#')
-                {
-                    pointer++;
-                    expression._flags |= CronExpressionFlag.NthDayOfWeek;
-                    pointer = GetNumber(out expression._nthdayOfWeek, MinNthDayOfWeek, null, pointer);
-
-                    if (pointer == null || expression._nthdayOfWeek < MinNthDayOfWeek || expression._nthdayOfWeek > MaxNthDayOfWeek)
-                    {
-                        ThrowFormatException(field, "'#' must be followed by a number between {0} and {1}.", MinNthDayOfWeek, MaxNthDayOfWeek);
-                    }
-                }
-            }
-
-            if (!IsWhiteSpace(*pointer) && !IsEndOfString(*pointer)) ThrowFormatException(field, "Unexpected character '{0}'.", *pointer);
-
-            SkipWhiteSpaces(ref pointer);
+            return expressionBuilder;
         }
 
-        private static unsafe void ParseList(
-            CronField field, 
-            ref char* pointer, 
-            CronExpression expression, 
-            ref long bits)
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private void AppendDayOfWeek(StringBuilder expressionBuilder, int dowValue)
         {
-            var singleValue = true;
-            while (true)
-            {
-                ParseRange(field, ref pointer, expression, ref bits, false);
+            AppendFieldValue(expressionBuilder, CronField.DaysOfWeek, dowValue);
 
-                if (*pointer == ',')
-                {
-                    singleValue = false;
-                    pointer++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (*pointer == 'W' && !singleValue)
-            {
-                ThrowFormatException(field, "Using some numbers with 'W' is not supported.");
-            }
+            if (HasFlag(CronExpressionFlag.DayOfWeekLast)) expressionBuilder.Append('L');
+            else if (HasFlag(CronExpressionFlag.NthDayOfWeek)) expressionBuilder.Append($"#{_nthDayOfWeek}");
         }
 
-        private static unsafe void ParseRange(
-            CronField field, 
-            ref char* pointer, 
-            CronExpression expression, 
-            ref long bits,
-            bool star)
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static long GetBits(CronField field, int num1, int num2, int step)
         {
-            int num1, num2, num3;
+            if (num2 < num1) return GetReversedRangeBits(field, num1, num2, step);
+            if (step == 1) return (1L << (num2 + 1)) - (1L << num1);
 
-            var low = field.First;
+            return GetRangeBits(num1, num2, step);
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static long GetRangeBits(int low, int high, int step)
+        {
+            var bits = 0L;
+            for (var i = low; i <= high; i += step)
+            {
+                SetBit(ref bits, i);
+            }
+            return bits;
+        }
+
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static long GetReversedRangeBits(CronField field, int num1, int num2, int step)
+        {
             var high = field.Last;
+            // Skip one of sundays.
+            if (field == CronField.DaysOfWeek) high--;
 
-            if (star)
-            {
-                num1 = low;
-                num2 = high;
-            }
-            else if(*pointer == '?')
-            {
-                if (field != CronField.DaysOfMonth && field != CronField.DaysOfWeek)
-                {
-                    ThrowFormatException(field, "'?' is not supported.");
-                }
-
-                pointer++;
-
-                if (field == CronField.DaysOfMonth)
-                {
-                    expression._flags |= CronExpressionFlag.DayOfMonthQuestion;
-                }
-
-                if (*pointer == '/')
-                {
-                    ThrowFormatException(field, "'/' is not allowed after '?'.");
-                }
-
-                SetAllBits(out bits);
-
-                return;
-            }
-            else if(*pointer == 'L')
-            {
-                if (field != CronField.DaysOfMonth)
-                {
-                    ThrowFormatException(field, "'L' is not supported.");
-                }
-
-                pointer++;
-
-                bits = LastDaysOfMonths;
-
-                expression._flags |= CronExpressionFlag.DayOfMonthLast;
-
-                if (*pointer == '-')
-                {
-                    // Eat the dash.
-                    pointer++;
-
-                    // Get the number following the dash.
-                    if ((pointer = GetNumber(out int lastMonthOffset, 0, null, pointer)) == null || lastMonthOffset < 0 || lastMonthOffset >= high)
-                    {
-                        ThrowFormatException(field, "Last month offset must be a number between {0} and {1} (all inclusive).", low, high);
-                    }
-
-                    bits = bits >> lastMonthOffset;
-                    expression._lastMonthOffset = lastMonthOffset;
-                }
-                return;
-            }
-            else
-            {
-                var names = field.Names;
-
-                if ((pointer = GetNumber(out num1, low, names, pointer)) == null || num1 < low || num1 > high)
-                {
-                    ThrowFormatException(field, "Value must be a number between {0} and {1} (all inclusive).", field, low, high);
-                }
-
-                if (*pointer == '-')
-                {
-                    if (field.CanDefineInterval) expression._flags |= CronExpressionFlag.Interval;
-
-                    // Eat the dash.
-                    pointer++;
-
-                    // Get the number following the dash.
-                    if ((pointer = GetNumber(out num2, low, names, pointer)) == null || num2 < low || num2 > high)
-                    {
-                        ThrowFormatException(field, "Range must contain numbers between {0} and {1} (all inclusive).", low, high);
-                    }
-
-                    if (*pointer == 'W')
-                    {
-                        ThrowFormatException(field, "'W' is not allowed after '-'.");
-                    }
-                }
-                else if (*pointer == '/')
-                {
-                    if (field.CanDefineInterval) expression._flags |= CronExpressionFlag.Interval;
-
-                    // If case of slash upper bound is high. E.g. '10/2` means 'every value from 10 to high with step size = 2'.
-                    num2 = high;
-                }
-                else
-                {
-                    SetBit(ref bits, num1);
-                    return;
-                }
-            }
-
-            // Check for step size.
-            if (*pointer == '/')
-            {
-                // Eat the slash.
-                pointer++;
-
-                // Get the step size -- note: we don't pass the
-                // names here, because the number is not an
-                // element id, it's a step size.  'low' is
-                // sent as a 0 since there is no offset either.
-                if ((pointer = GetNumber(out num3, 0, null, pointer)) == null || num3 <= 0 || num3 > high)
-                {
-                    ThrowFormatException(field, "Step must be a number between 1 and {0} (all inclusive).", high);
-                }
-                if (*pointer == 'W')
-                {
-                    ThrowFormatException(field, "'W' is not allowed after '/'.");
-                }
-            }
-            else
-            {
-                // No step. Default == 1.
-                num3 = 1;
-            }
-
-            // If upper bound less than bottom one, e.g. range 55-10 specified
-            // we'll set bits from 0 to 15 then we shift it right by 5 bits.
-            int shift = 0;
-            if (num2 < num1)
-            {
-                // Skip one of sundays.
-                if (field == CronField.DaysOfWeek) high--;
-
-                shift = high - num1 + 1;
-                num2 = num2 + shift;
-                num1 = low;
-            }
-
-            // Range. set all elements from num1 to num2, stepping
-            // by num3.
-            if (num3 == 1 && num1 < num2 + 1)
-            {
-                // Fast path, to set all the required bits at once.
-                bits |= (1L << (num2 + 1)) - (1L << num1);
-            }
-            else
-            {
-                for (var i = num1; i <= num2; i += num3)
-                {
-                    SetBit(ref bits, i);
-                }
-            }
-
-            // If we have range like 55-10 or 11-1, so num2 > num1 we have to shift bits right.
-            bits = shift == 0 
-                ? bits 
-                : bits >> shift | bits << (high - low - shift + 1);
+            var bits = GetRangeBits(num1, high, step);
+            
+            num1 = field.First + step - (high - num1) % step - 1;
+            return bits | GetRangeBits(num1, num2, step);
         }
 
-        private static unsafe char* GetNumber(
-            out int num, /* where does the result go? */
-            int low, /* offset applied to result if symbolic enum used */
-            int[] names, /* symbolic names, if any, for enums */
-            char* pointer)
+#if !NET40
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+        private static long GetBit(int num1)
         {
-            num = 0;
+            return 1L << num1;
+        }
 
+        private static unsafe int GetNumber(ref char* pointer, int[] names)
+        {
             if (IsDigit(*pointer))
             {
-                num = GetNumeric(*pointer++);
+                var num = GetNumeric(*pointer++);
 
-                if (!IsDigit(*pointer)) return pointer;
+                if (!IsDigit(*pointer)) return num;
 
                 num = num * 10 + GetNumeric(*pointer++);
 
-                if (!IsDigit(*pointer)) return pointer;
-
-                return null;
+                if (!IsDigit(*pointer)) return num;
+                return -1;
             }
 
-            if (names == null) return null;
+            if (names == null) return -1;
 
-            if (!IsLetter(*pointer)) return null;
+            if (!IsLetter(*pointer)) return -1;
             var buffer = ToUpper(*pointer++);
 
-            if (!IsLetter(*pointer)) return null;
+            if (!IsLetter(*pointer)) return -1;
             buffer |= ToUpper(*pointer++) << 8;
 
-            if (!IsLetter(*pointer)) return null;
+            if (!IsLetter(*pointer)) return -1;
             buffer |= ToUpper(*pointer++) << 16;
-
-            if (IsLetter(*pointer)) return null;
 
             var length = names.Length;
 
@@ -964,12 +995,11 @@ namespace Cronos
             {
                 if (buffer == names[i])
                 {
-                    num = i + low;
-                    return pointer;
+                    return i;
                 }
             }
 
-            return null;
+            return -1;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -985,15 +1015,15 @@ namespace Cronos
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowWrongDateTimeKindException(string paramName)
+        private static void ThrowFromShouldBeLessThanToException(string fromName, string toName)
         {
-            throw new ArgumentException("The supplied DateTime must have the Kind property set to Utc", paramName);
+            throw new ArgumentException($"The value of the {fromName} argument should be less than the value of the {toName} argument.", fromName);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void ThrowDateTimeKindIsUnspecifiedException(string paramName)
+        private static void ThrowWrongDateTimeKindException(string paramName)
         {
-            throw new ArgumentException("The supplied DateTime must have the Kind property set to Utc or Local", paramName);
+            throw new ArgumentException("The supplied DateTime must have the Kind property set to Utc", paramName);
         }
 
 #if !NET40
@@ -1010,14 +1040,6 @@ namespace Cronos
         private static void SetBit(ref long value, int index)
         {
             value |= 1L << index;
-        }
-
-#if !NET40
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#endif
-        private static void SetAllBits(out long bits)
-        {
-            bits = -1L;
         }
 
 #if !NET40
